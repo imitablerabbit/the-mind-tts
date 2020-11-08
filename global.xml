@@ -1,0 +1,27 @@
+<HorizontalLayout
+    rectAlignment="LowerCenter"
+    width="50%"
+    height="4%"
+    offsetXY="0 10"
+    childAlignment="MiddleCenter"
+    spacing="15">
+    <text
+        id="high-score-text-id"
+        color="white"
+        fontSize="24"
+        alignment="MiddleRight">
+        High Score: 0
+    </text>
+    <button
+        fontSize="24"
+        onclick="countScoreButton">
+        Count Score
+    </button>
+    <text
+        id="score-text-id"
+        color="white"
+        fontSize="24"
+        alignment="MiddleLeft">
+        Score: 0
+    </text>
+</HorizontalLayout>
