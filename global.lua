@@ -426,22 +426,16 @@ function faceUpCards(cardTable)
 end
 
 --[[
-How many life cards are currently face up?
+Flip over the cards in the card table to ensure that only the cards starting
+from 1 and going until `count` will be face up. Any other cards will be turned
+face down.
 ]]
-function remainingLives()
-    return faceUpCards(lifeCards)
-end
-
---[[
-Flip over the next life card in the area.
-]]
-function addLife()
-    local lives = remainingLives()
-    for i, card in ipairs(lifeCards)
+function ensureFaceUpCount(cardTable, count)
+    for i, card in ipairs(cardTable) do
         local object = getObjectFromGUID(card.guid)
         if not object then return -1 end
         local faceUp = isFaceUp(object)
-        if i < lives then
+        if i <= count then
             -- Make sure that the card is facing up
             if not faceUp then
                 object.flip()
@@ -455,8 +449,27 @@ function addLife()
     end
 end
 
-function removeLife()
+--[[
+How many life cards are currently face up?
+]]
+function remainingLives()
+    return faceUpCards(lifeCards)
+end
 
+--[[
+Flip over the next life card in the area to add a new life
+]]
+function addLife()
+    local lives = remainingLives() + 1
+    ensureFaceUpCount(lifeCards, lives)
+end
+
+--[[
+Flip over an existing life card to remove a life.
+]]
+function removeLife()
+    local lives = remainingLives() - 1
+    ensureFaceUpCount(lifeCards, lives)
 end
 
 --[[
@@ -464,6 +477,22 @@ How many shuriken cards are currently face up?
 ]]
 function remainingShuriken()
     return faceUpCards(shurikenCards)
+end
+
+--[[
+Flip over the next life card in the area to add a new life
+]]
+function addShuriken()
+    local shuriken = remainingShuriken() + 1
+    ensureFaceUpCount(shurikenCards, shuriken)
+end
+
+--[[
+Flip over an existing life card to remove a life.
+]]
+function removeShuriken()
+    local shuriken = remainingShuriken() - 1
+    ensureFaceUpCount(shurikenCards, shuriken)
 end
 
 --[[ The onLoad event is called after the game save finishes loading.--]]
@@ -483,6 +512,6 @@ function onLoad()
     -- log(orderLevelDeck())
     log("Lives: "..remainingLives())
     log("Shuriken: "..remainingShuriken())
-    addLife()
-    addLife()
+    -- removeLife()
+    -- removeShuriken()
 end
