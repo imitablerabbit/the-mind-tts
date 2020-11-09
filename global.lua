@@ -4,6 +4,7 @@
 numberCards = {}
 numberCardsLookup = {}
 numberDeckZone = nil
+numberDeckPosition = nil
 numberDiscardZone = nil
 numberDiscardPosition = nil
 numberDeck = nil
@@ -11,6 +12,7 @@ numberDeck = nil
 levelCards = {}
 levelCardsLookup = {}
 levelCurrentZone = nil
+levelCurrentPosition = nil
 levelDiscardZone = nil
 levelDiscardPosition = nil
 levelDeck = nil
@@ -128,6 +130,7 @@ function initNumberCards()
     end
 
     numberDeckZone = getObjectFromGUID('fe3494')
+    numberDeckPosition = {-3.00, 1.46, 0.00}
     numberDiscardZone = getObjectFromGUID('79b9e2')
     numberDiscardPosition = Vector(-6.00, 0.97, 0.00)
     numberDeck = numberDeckZone.getObjects()[1]
@@ -135,24 +138,25 @@ end
 
 function initLevelCards()
     levelCards = {}
-    levelCards[1] = {guid = '247c92', value = 1, description = "Level 1"}
-    levelCards[2] = {guid = '4bf571', value = 2, description = "Level 2"}
-    levelCards[3] = {guid = '25af26', value = 3, description = "Level 3"}
-    levelCards[4] = {guid = '8acb9e', value = 4, description = "Level 4"}
-    levelCards[5] = {guid = '22d875', value = 5, description = "Level 5"}
-    levelCards[6] = {guid = '2bcc9e', value = 6, description = "Level 6"}
-    levelCards[7] = {guid = '548646', value = 7, description = "Level 7"}
-    levelCards[8] = {guid = 'dca238', value = 8, description = "Level 8"}
-    levelCards[9] = {guid = 'fb035c', value = 9, description = "Level 9"}
-    levelCards[10] = {guid = 'b95026', value = 10, description = "Level 10"}
-    levelCards[11] = {guid = '03623d', value = 11, description = "Level 11"}
-    levelCards[12] = {guid = 'd24cde', value = 12, description = "Level 12"}
+    levelCards[1] = {guid = '247c92', value = 1, description = "Level 1", gainLife = false, gainShuriken = false}
+    levelCards[2] = {guid = '4bf571', value = 2, description = "Level 2", gainLife = false, gainShuriken = true}
+    levelCards[3] = {guid = '25af26', value = 3, description = "Level 3", gainLife = true, gainShuriken = false}
+    levelCards[4] = {guid = '8acb9e', value = 4, description = "Level 4", gainLife = false, gainShuriken = false}
+    levelCards[5] = {guid = '22d875', value = 5, description = "Level 5", gainLife = false, gainShuriken = true}
+    levelCards[6] = {guid = '2bcc9e', value = 6, description = "Level 6", gainLife = true, gainShuriken = false}
+    levelCards[7] = {guid = '548646', value = 7, description = "Level 7", gainLife = false, gainShuriken = false}
+    levelCards[8] = {guid = 'dca238', value = 8, description = "Level 8", gainLife = false, gainShuriken = true}
+    levelCards[9] = {guid = 'fb035c', value = 9, description = "Level 9", gainLife = true, gainShuriken = false}
+    levelCards[10] = {guid = 'b95026', value = 10, description = "Level 10", gainLife = false, gainShuriken = false}
+    levelCards[11] = {guid = '03623d', value = 11, description = "Level 11", gainLife = false, gainShuriken = false}
+    levelCards[12] = {guid = 'd24cde', value = 12, description = "Level 12", gainLife = false, gainShuriken = false}
 
     for i, card in ipairs(levelCards) do
         levelCardsLookup[card.guid] = card
     end
 
     levelCurrentZone = getObjectFromGUID("f8d8a1")
+    levelCurrentPosition = Vector(6.00, 0.97, 0.00)
     levelDiscardZone = getObjectFromGUID("4f02e7")
     levelDiscardPosition = Vector(3.00, 0.97, 0.00)
     levelDeck = levelCurrentZone.getObjects()[1]
@@ -178,6 +182,37 @@ function initShurikenCards()
     for i, card in ipairs(shurikenCards) do
         shurikenCardsLookup[card.guid] = card
     end
+end
+
+function initLevelButtons()
+    local previousCoin = getObjectFromGUID("e9d1a5")
+    local nextCoin = getObjectFromGUID("dae278")
+
+    previousCoin.clearButtons()
+    scoreButton = previousCoin.createButton({
+        click_function = "previousLevel",
+        function_owner = self,
+        label          = "Previous",
+        position       = vector(0, 2, 0),
+        rotation       = vector(0, 270, 0),
+        width          = 2500,
+        height         = 1000,
+        font_size      = 500,
+        tooltip        = "Go back to the previous level",
+    })
+
+    nextCoin.clearButtons()
+    scoreButton = nextCoin.createButton({
+        click_function = "nextLevel",
+        function_owner = self,
+        label          = "Next",
+        position       = vector(0, 2, 0),
+        rotation       = vector(0, 270, 0),
+        width          = 2500,
+        height         = 1000,
+        font_size      = 500,
+        tooltip        = "Go back to the next level",
+    })
 end
 
 function drawLines()
@@ -250,36 +285,131 @@ function drawLines()
 end
 
 --[[
+Return the only object in this zone. If there is more than one object, this
+function will fail and print out an error to the log.
+]]
+function getZoneObject(zone)
+    if not zone then
+        logError("invalid zone object")
+        return -1
+    end
+    local objs = zone.getObjects()
+    if not objs then
+        logWarn("no objects in zone")
+        return -2
+    end
+    -- Check how many items are in the objs. If there is more than 1 then
+    -- something is not right and we should bail out.
+    local objCount = #objs
+    if objCount > 1 then
+        logWarn("multiple objects in zone - unable to distinguish")
+        return -3
+    end
+    if objCount < 1 then
+        logWarn("no objects in zone")
+        return -2
+    end
+    return objs[1]
+end
+
+--[[
 Find what level number the players are on. This is determined by getting the
 deck within the current level zone and looking at the bottom card in the object
 list.
 ]]
 function currentLevel(levelZone)
-    if not levelZone then return -1 end
-    local levels = levelZone.getObjects()
-    if not levels then return -2 end
-    -- Check how many items are in the levels. If there is more than 1 then
-    -- something is not right and we should bail out.
-    local levelCount = #levels
-    if levelCount > 1 then return -3 end
-    if levelCount < 1 then return 0 end -- Its possible that we have won.
-    -- Check if the object is a deck or a single card. The single card would
-    -- mean that we only have a single level remaining and we can just print the
-    -- value of the card.
-    local levelsObject = levels[1]
-    local isDeck = levelsObject.tag == "Deck"
+    local levelsObject = getZoneObject(levelZone)
+    if type(levelsObject) == "number" then
+        logError("unable to get current level (-1)")
+        return -1
+    end
     local card = nil
-    if not isDeck then
-        -- The object itself is a single remaining card.
+    if levelsObject.tag == "Card" then
         card = levelsObject
-    else
+    elseif levelsObject.tag == "Deck" then
         local cards = levelsObject.getObjects()
         local deckSize = #cards
         card = cards[deckSize]
     end
-    if not card then return -5 end
+    if not card then
+        logError("unable to get current level (-2)")
+        return -2
+    end
     local levelCard = levelCardsLookup[card.guid]
     return levelCard
+end
+
+--[[
+Progresses the level deck in the zone its discard. The argument `gainBonus`
+denotes whether or not a life/shuriken would be gained provided that the current
+level allows it. This flag is used to control whether or not the level
+advancement behaves as though the players completed the level or just decided
+to start elsewhere. The remove bonus does the same but in reverse, e.g. it will
+remove lives. These parameters should be mutually exclusive.
+]]
+function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
+    local returnCode = 0
+
+    if gainBonus or removeBonus then
+        local current = currentLevel(levelZone)
+        local currentData = nil
+
+        if type(current) == "table" then
+            currentData = levelCardsLookup[current.guid]
+        elseif current == 0 then
+            return returnCode
+        elseif current < 0 then
+            returnCode = -1
+            logError("unable to move level ("..returnCode..")")
+            return returnCode
+        end
+
+        if gainBonus and currentData.gainLife then
+            addLife()
+        end
+        if gainBonus and currentData.gainShuriken then
+            addShuriken()
+        end
+        if removeBonus and currentData.gainLife then
+            removeLife()
+        end
+        if removeBonus and currentData.gainShuriken then
+            removeShuriken()
+        end
+    end
+
+    -- Physically move the card from its zone to the discard position.
+    local levelsObject = getZoneObject(levelZone)
+    if type(levelsObject) == "number" then
+        returnCode = -2
+        logError("unable to move level ("..returnCode..")")
+        return returnCode
+    end
+    if levelsObject.tag == "Card" then
+        levelsObject.setPositionSmooth(discardPosition, false, false)
+    elseif levelsObject.tag == "Deck" then
+        levelsObject.takeObject({
+            position = discardPosition
+        })
+    end
+end
+
+--[[
+Advance to the next level and gain the rewards.
+]]
+function nextLevel()
+    local discardPosition = levelDiscardPosition:copy()
+    discardPosition.y = discardPosition.y + 1
+    moveLevel(levelCurrentZone, discardPosition, true, false)
+end
+
+--[[
+Move back to the previousLevel and lose the rewards.
+]]
+function previousLevel()
+    local discardPosition = levelCurrentPosition:copy()
+    discardPosition.y = discardPosition.y + 1
+    moveLevel(levelDiscardZone, discardPosition, false, true)
 end
 
 --[[
@@ -287,7 +417,7 @@ Take the cards out of the numberDeck and recreate them in numeric order on the
 discard pile.
 ]]
 function orderNumberDeck()
-    local dropPosition = numberDiscardPosition
+    local dropPosition = numberDiscardPosition:copy()
     dropPosition.y = 3
     return orderDeck(numberCards, numberDeck, dropPosition,
     function()
@@ -298,7 +428,6 @@ function orderNumberDeck()
             end)
         if not deckObjects then return end
         numberDeck = deckObjects[1]
-        log(numberDeck)
     end)
 end
 
@@ -307,7 +436,7 @@ Take the cards out of the levelsDeck and recreate them in numeric order on the
 discard pile.
 ]]
 function orderLevelDeck()
-    local dropPosition = levelDiscardPosition
+    local dropPosition = levelDiscardPosition:copy()
     dropPosition.y = 3
     return orderDeck(levelCards, levelDeck, dropPosition,
         function()
@@ -318,7 +447,6 @@ function orderLevelDeck()
                 end)
             if not deckObjects then return end
             levelDeck = deckObjects[1]
-            log(levelDeck)
         end)
 end
 
@@ -348,7 +476,7 @@ function orderDeck(cardTable, deck, movePosition, callback)
         Wait.frames(function()
             if remaining == 0 then
                 local c = getObjectFromGUID(card.guid)
-                c.setPositionSmooth(movePosition, false, true)
+                c.setPositionSmooth(movePosition, false, false)
                 return
             end
             deck.takeObject({
@@ -495,16 +623,34 @@ function removeShuriken()
     ensureFaceUpCount(shurikenCards, shuriken)
 end
 
+--[[
+Log an error to the in game log. This function will make sure that the text
+is printed in red.
+]]
+function logError(var)
+    logStyle("error", "Red")
+    log(var, "Error: ", "error")
+end
+
+--[[
+Log a warning to the in game log. This function will make sure that the text
+is printed in blue.
+]]
+function logWarn(var)
+    logStyle("warn", "Blue")
+    log(var, "Warn: ", "warn")
+end
+
 --[[ The onLoad event is called after the game save finishes loading.--]]
 function onLoad()
     initNumberCards()
     initLevelCards()
     initLifeCards()
     initShurikenCards()
+    initLevelButtons()
     drawLines()
 
     local level = currentLevel(levelCurrentZone)
-    log(type(level))
     if type(level) == "table" then
         log("Level: "..level.value)
     end
