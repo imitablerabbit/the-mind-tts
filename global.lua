@@ -189,7 +189,7 @@ function initLevelButtons()
     local nextCoin = getObjectFromGUID("dae278")
 
     previousCoin.clearButtons()
-    scoreButton = previousCoin.createButton({
+    previousCoin.createButton({
         click_function = "previousLevel",
         function_owner = self,
         label          = "Previous",
@@ -202,7 +202,7 @@ function initLevelButtons()
     })
 
     nextCoin.clearButtons()
-    scoreButton = nextCoin.createButton({
+    nextCoin.createButton({
         click_function = "nextLevel",
         function_owner = self,
         label          = "Next",
@@ -212,6 +212,36 @@ function initLevelButtons()
         height         = 1000,
         font_size      = 500,
         tooltip        = "Go back to the next level",
+    })
+end
+
+function initNumbersButtons()
+    local resetCoin = getObjectFromGUID("b50b8c")
+    resetCoin.clearButtons()
+    resetCoin.createButton({
+        click_function = "resetNumberCards",
+        function_owner = self,
+        label          = "Reset",
+        position       = vector(0, 2, 0),
+        rotation       = vector(0, 270, 0),
+        width          = 2500,
+        height         = 1000,
+        font_size      = 500,
+        tooltip        = "Reset the numbers deck ready for the next level",
+    })
+
+    local dealCoin = getObjectFromGUID("c15ecd")
+    dealCoin.clearButtons()
+    dealCoin.createButton({
+        click_function = "dealNumberCards",
+        function_owner = self,
+        label          = "Deal",
+        position       = vector(0, 2, 0),
+        rotation       = vector(0, 270, 0),
+        width          = 2500,
+        height         = 1000,
+        font_size      = 500,
+        tooltip        = "Deal cards for the current level",
     })
 end
 
@@ -624,12 +654,77 @@ function removeShuriken()
 end
 
 --[[
+Deal cards equal to the current level count to all of the seated players at the
+table. This function assumes that the numbers deck has been recreated and
+shuffled.
+]]
+function dealNumberCards()
+    local deck = getZoneObject(numberDeckZone)
+    if type(deck) == "number" then
+        logError("unable to deal cards (-1)")
+        return -1
+    end
+    if deck.tag ~= "Deck" then
+        logError("unable to deal cards (-2)")
+        return -2
+    end
+    local current = currentLevel(levelCurrentZone)
+    if type(current) == "number" then
+        logError("unable to deal cards (-3)")
+        return -3
+    end
+    deck.deal(current.value)
+    return 0
+end
+
+--[[
+Gather all of the number cards from the discard pile and move them to the normal
+deck position. Shuffle the deck ready for the cards to be dealt out. This
+function can receive an optional callback which will be called once all of the
+cards have been pulled back into the deck and recreated.
+]]
+function resetNumberCards()
+    local discardObjs = numberDiscardZone.getObjects()
+    if not discardObjs then
+        logError("unable to reset number cards (-1)")
+        return -1
+    end
+    -- Loop over discard pile. This could contain decks of cards.
+    for i, card in ipairs(discardObjs) do
+        if isFaceUp(card) then
+            card.flip()
+        end
+        card.setPositionSmooth(numberDeckPosition, false, false)
+    end
+    -- Loop over loose cards anywhere in the game.
+    for i, cardData in ipairs(numberCards) do
+        local card = getObjectFromGUID(cardData.guid)
+        if card then
+            if isFaceUp(card) then
+                card.flip()
+            end
+            card.setPosition(numberDiscardPosition)
+            card.setPositionSmooth(numberDeckPosition, false, false)
+        end
+    end
+    Wait.frames(function()
+        local deck = getZoneObject(numberDeckZone)
+        if type(deck) == "number" then
+            logError("unable to reset number cards (-2)")
+            return -2
+        end
+        deck.shuffle()
+    end, 60)
+    return 0
+end
+
+--[[
 Log an error to the in game log. This function will make sure that the text
 is printed in red.
 ]]
 function logError(var)
     logStyle("error", "Red")
-    log(var, "Error: ", "error")
+    log("Error: "..var, nil, "error")
 end
 
 --[[
@@ -648,6 +743,7 @@ function onLoad()
     initLifeCards()
     initShurikenCards()
     initLevelButtons()
+    initNumbersButtons()
     drawLines()
 
     local level = currentLevel(levelCurrentZone)
