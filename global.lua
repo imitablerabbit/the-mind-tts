@@ -22,6 +22,7 @@ lifeCardsLookup = {}
 
 shurikenCards = {}
 shurikenCardsLookup = {}
+shurikenVotes = nil -- only populated during a vote
 
 function initNumberCards()
     numberCards[1] = {guid = '5bd80d', value = 1, description = "Number 1"}
@@ -124,11 +125,9 @@ function initNumberCards()
     numberCards[98] = {guid = '079016', value = 98, description = "Number 98"}
     numberCards[99] = {guid = '08afca', value = 99, description = "Number 99"}
     numberCards[100] = {guid = 'b49deb', value = 100, description = "Number 100"}
-
     for i, card in ipairs(numberCards) do
         numberCardsLookup[card.guid] = card
     end
-
     numberDeckZone = getObjectFromGUID('fe3494')
     numberDeckPosition = {-3.00, 1.46, 0.00}
     numberDiscardZone = getObjectFromGUID('79b9e2')
@@ -150,11 +149,9 @@ function initLevelCards()
     levelCards[10] = {guid = 'b95026', value = 10, description = "Level 10", gainLife = false, gainShuriken = false}
     levelCards[11] = {guid = '03623d', value = 11, description = "Level 11", gainLife = false, gainShuriken = false}
     levelCards[12] = {guid = 'd24cde', value = 12, description = "Level 12", gainLife = false, gainShuriken = false}
-
     for i, card in ipairs(levelCards) do
         levelCardsLookup[card.guid] = card
     end
-
     levelCurrentZone = getObjectFromGUID("f8d8a1")
     levelCurrentPosition = Vector(6.00, 0.97, 0.00)
     levelDiscardZone = getObjectFromGUID("4f02e7")
@@ -168,7 +165,6 @@ function initLifeCards()
     lifeCards[3] = {guid = '90899d', value = 3, description = "Life 3"}
     lifeCards[4] = {guid = '433ed2', value = 4, description = "Life 4"}
     lifeCards[5] = {guid = '1e9748', value = 5, description = "Life 5"}
-
     for i, card in ipairs(lifeCards) do
         lifeCardsLookup[card.guid] = card
     end
@@ -178,7 +174,6 @@ function initShurikenCards()
     shurikenCards[1] = {guid = 'fc4bd4', value = 1, description = "Shuriken 1"}
     shurikenCards[2] = {guid = '52f787', value = 2, description = "Shuriken 2"}
     shurikenCards[3] = {guid = '86f6be', value = 3, description = "Shuriken 3"}
-
     for i, card in ipairs(shurikenCards) do
         shurikenCardsLookup[card.guid] = card
     end
@@ -187,7 +182,6 @@ end
 function initLevelButtons()
     local previousCoin = getObjectFromGUID("e9d1a5")
     local nextCoin = getObjectFromGUID("dae278")
-
     previousCoin.clearButtons()
     previousCoin.createButton({
         click_function = "previousLevel",
@@ -200,7 +194,6 @@ function initLevelButtons()
         font_size      = 500,
         tooltip        = "Go back to the previous level",
     })
-
     nextCoin.clearButtons()
     nextCoin.createButton({
         click_function = "nextLevel",
@@ -217,6 +210,7 @@ end
 
 function initNumbersButtons()
     local resetCoin = getObjectFromGUID("b50b8c")
+    local dealCoin = getObjectFromGUID("c15ecd")
     resetCoin.clearButtons()
     resetCoin.createButton({
         click_function = "resetNumberCards",
@@ -229,8 +223,6 @@ function initNumbersButtons()
         font_size      = 500,
         tooltip        = "Reset the numbers deck ready for the next level",
     })
-
-    local dealCoin = getObjectFromGUID("c15ecd")
     dealCoin.clearButtons()
     dealCoin.createButton({
         click_function = "dealNumberCards",
@@ -242,6 +234,29 @@ function initNumbersButtons()
         height         = 1000,
         font_size      = 500,
         tooltip        = "Deal cards for the current level",
+    })
+end
+
+--[[
+Create the shuriken vote button. Each player should press this button to
+vote on whether to use a shuriken. If all of the players seated at the table
+have voted to use the shuriken, then we will use one. The use of a shuriken
+is not automatic though.
+]]
+function initShurikenButtons()
+    -- TODO: We need to create a coin in the game and place the ID here.
+    local shurikenCoin = getObjectFromGUID("")
+    shurikenCoin.clearButtons()
+    shurikenCoin.createButton({
+        click_function = "voteShurikenHandler",
+        function_owner = self,
+        label          = "Vote For Shuriken",
+        position       = vector(0, 2, 0),
+        rotation       = vector(0, 270, 0),
+        width          = 2500,
+        height         = 1000,
+        font_size      = 500,
+        tooltip        = "Vote to use a shuriken",
     })
 end
 
@@ -290,7 +305,6 @@ function drawLines()
         {{-8.00, 0.97, -2.00}, {-8.00, 0.99, -4.00}}, -- Right
         {{-8.00, 0.99, -4.00}, {-1.00, 0.99, -4.00}}  -- Top
     }
-
     -- Combine all of the individual line tables into a single one so that we
     -- can generate vetor tables for all of them.
     local allLines = {}
@@ -379,11 +393,9 @@ remove lives. These parameters should be mutually exclusive.
 ]]
 function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
     local returnCode = 0
-
     if gainBonus or removeBonus then
         local current = currentLevel(levelZone)
         local currentData = nil
-
         if type(current) == "table" then
             currentData = levelCardsLookup[current.guid]
         elseif current == 0 then
@@ -393,7 +405,6 @@ function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
             logError("unable to move level ("..returnCode..")")
             return returnCode
         end
-
         if gainBonus and currentData.gainLife then
             addLife()
         end
@@ -407,7 +418,6 @@ function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
             removeShuriken()
         end
     end
-
     -- Physically move the card from its zone to the discard position.
     local levelsObject = getZoneObject(levelZone)
     if type(levelsObject) == "number" then
@@ -450,15 +460,15 @@ function orderNumberDeck()
     local dropPosition = numberDiscardPosition:copy()
     dropPosition.y = 3
     return orderDeck(numberCards, numberDeck, dropPosition,
-    function()
-        log("Finished ordering number deck")
-        local deckObjects = findInRadiusBy(numberDiscardPosition, 4,
-            function(obj)
-                return (obj.tag == "Deck")
-            end)
-        if not deckObjects then return end
-        numberDeck = deckObjects[1]
-    end)
+        function()
+            log("Finished ordering number deck")
+            local deckObjects = findInRadiusBy(numberDiscardPosition, 4,
+                function(obj)
+                    return (obj.tag == "Deck")
+                end)
+            if not deckObjects then return end
+            numberDeck = deckObjects[1]
+        end)
 end
 
 --[[
@@ -493,7 +503,6 @@ function orderDeck(cardTable, deck, movePosition, callback)
     if not cardTable then return -1 end
     if not deck then return -2 end
     if not movePosition then return -3 end
-
     local initialObjects = deck.getObjects()
     local deckSize = #initialObjects
     local last = nil
@@ -514,7 +523,6 @@ function orderDeck(cardTable, deck, movePosition, callback)
                 guid = card.guid})
         end, (frameSleep * i) + frameSleepDelay)
     end
-
     -- Call the optional callback once the decks have been reordered.
     if callback then
         Wait.frames(function()
@@ -535,7 +543,6 @@ function findInRadiusBy(pos, radius, func, debug)
         origin=pos, direction={0,1,0}, type=2, size={radius,radius,radius},
         max_distance=0, debug=(debug or false)
     })
-
     local refinedList = {}
     for _, obj in ipairs(objList) do
         if func == nil then
@@ -546,7 +553,6 @@ function findInRadiusBy(pos, radius, func, debug)
             end
         end
     end
-
     return refinedList
 end
 
@@ -719,6 +725,80 @@ function resetNumberCards()
 end
 
 --[[
+Handle the vote shuriken button. If this is the first time then we will
+start a new vote. After 5 seconds, depending on the number of seated players
+who have voted to use a shuriken, we will either stop the vote or use a
+shuriken.
+]]
+function voteShurikenHandler(obj, playerColor, altClick)
+    if not shurikenVotes then
+        shurikenVotes = {}
+        Wait.time(checkShurikenVotes, 5, 0)
+        broadcastToAll(playerColor.." has started a vote to use a shuriken.")
+    else
+        broadcastToAll(playerColor.." has voted to use a shuriken.")
+    end
+    castVote(playerColor, shurikenVotes)
+end
+
+--[[
+Check whether all of the players have voted to use a shuriken. If they have
+then remove a shuriken and reset the shuriken vote data.
+]]
+function checkShurikenVotes()
+    if not shurikenVotes then
+       logWarn("no active shuriken vote")
+       return -1
+    end
+    if allColorsVoted(shurikenVotes) then
+        broadcastToAll("All players voted to use a shuriken")
+        removeShuriken()
+    else
+        broadcastToAll("Not all players voted to use a shuriken within the time limit. Cancelling vote.")
+    end
+    shurikenVotes = nil
+end
+
+--[[
+Cast a vote for the player color within the vote table.
+]]
+function castVote(playerColor, voteTable)
+    if not playerColor then return -1 end
+    if not voteTable then return -2 end
+    voteTable[playerColor] = true
+end
+
+--[[
+Gathers a list of all the seated players at the table.
+]]
+function seatedPlayers()
+    local players = Player.getPlayers()
+    local seatedPlayers = {}
+    local x = 0
+    for i, player in ipairs(players) do
+        if player.seated then
+            seatedPlayers[x] = player
+            x++
+        end
+    end
+    return seatedPlayers
+end
+
+--[[
+Check whether all of the players seated around the table have voted 
+on whether they should use a shuriken.
+]]
+function allColorsVoted(voteTable)
+    local seated = seatedPlayers()
+    for i, player in ipairs(seated) do
+        if not voteTable[player.color] then
+            return false
+        end
+    end
+    return true
+end
+
+--[[
 Log an error to the in game log. This function will make sure that the text
 is printed in red.
 ]]
@@ -744,8 +824,8 @@ function onLoad()
     initShurikenCards()
     initLevelButtons()
     initNumbersButtons()
+    initShurikenButtons()
     drawLines()
-
     local level = currentLevel(levelCurrentZone)
     if type(level) == "table" then
         log("Level: "..level.value)
