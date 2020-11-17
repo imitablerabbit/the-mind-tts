@@ -245,7 +245,7 @@ is not automatic though.
 ]]
 function initShurikenButtons()
     -- TODO: We need to create a coin in the game and place the ID here.
-    local shurikenCoin = getObjectFromGUID("")
+    local shurikenCoin = getObjectFromGUID("15bb08")
     shurikenCoin.clearButtons()
     shurikenCoin.createButton({
         click_function = "voteShurikenHandler",
@@ -253,7 +253,7 @@ function initShurikenButtons()
         label          = "Vote For Shuriken",
         position       = vector(0, 2, 0),
         rotation       = vector(0, 270, 0),
-        width          = 2500,
+        width          = 5000,
         height         = 1000,
         font_size      = 500,
         tooltip        = "Vote to use a shuriken",
@@ -778,14 +778,14 @@ function seatedPlayers()
     for i, player in ipairs(players) do
         if player.seated then
             seatedPlayers[x] = player
-            x++
+            x = x + 1
         end
     end
     return seatedPlayers
 end
 
 --[[
-Check whether all of the players seated around the table have voted 
+Check whether all of the players seated around the table have voted
 on whether they should use a shuriken.
 ]]
 function allColorsVoted(voteTable)
