@@ -24,6 +24,40 @@ shurikenCards = {}
 shurikenCardsLookup = {}
 shurikenVotes = nil -- only populated during a vote
 
+-- ============================================================================
+-- Global Callback Functions
+-- ============================================================================
+
+--[[ The onLoad event is called after the game save finishes loading.--]]
+function onLoad()
+    initNumberCards()
+    initLevelCards()
+    initLifeCards()
+    initShurikenCards()
+    initLevelButtons()
+    initNumbersButtons()
+    initShurikenButtons()
+    drawLines()
+    local level = currentLevel(levelCurrentZone)
+    if type(level) == "table" then
+        log("Level: "..level.value)
+    end
+    -- log(orderNumberDeck())
+    -- log(orderLevelDeck())
+    log("Lives: "..remainingLives())
+    log("Shuriken: "..remainingShuriken())
+    -- removeLife()
+    -- removeShuriken()
+end
+
+-- ============================================================================
+-- Card Initialisation Functions
+-- ============================================================================
+
+--[[
+-- Initialise the global variables associated with the main number deck that
+-- gets dealt out to each of the players.
+--]]
 function initNumberCards()
     numberCards[1] = {guid = '5bd80d', value = 1, description = "Number 1"}
     numberCards[2] = {guid = '201c46', value = 2, description = "Number 2"}
@@ -135,6 +169,10 @@ function initNumberCards()
     numberDeck = numberDeckZone.getObjects()[1]
 end
 
+--[[
+-- Initialise the level deck. This represents what level the group is currently
+-- on. As this progresses the group will gain lives and shurikens.
+--]]
 function initLevelCards()
     levelCards = {}
     levelCards[1] = {guid = '247c92', value = 1, description = "Level 1", gainLife = false, gainShuriken = false}
@@ -159,6 +197,10 @@ function initLevelCards()
     levelDeck = levelCurrentZone.getObjects()[1]
 end
 
+--[[
+-- Initialise the life cards. These represent the number of lives that the
+-- players have. Face up lives represent the number of lives remaining.
+--]]
 function initLifeCards()
     lifeCards[1] = {guid = '9a3b4d', value = 1, description = "Life 1"}
     lifeCards[2] = {guid = '5d4937', value = 2, description = "Life 2"}
@@ -170,6 +212,10 @@ function initLifeCards()
     end
 end
 
+--[[
+-- Initialise the shuriken cards. These represent the number of shurikens that
+-- the players have left. Face up cards represent the number of shurikens remaining.
+--]]
 function initShurikenCards()
     shurikenCards[1] = {guid = 'fc4bd4', value = 1, description = "Shuriken 1"}
     shurikenCards[2] = {guid = '52f787', value = 2, description = "Shuriken 2"}
@@ -178,6 +224,10 @@ function initShurikenCards()
         shurikenCardsLookup[card.guid] = card
     end
 end
+
+-- ============================================================================
+-- Button Initialisation Functions
+-- ============================================================================
 
 function initLevelButtons()
     local previousCoin = getObjectFromGUID("e9d1a5")
@@ -238,13 +288,12 @@ function initNumbersButtons()
 end
 
 --[[
-Create the shuriken vote button. Each player should press this button to
-vote on whether to use a shuriken. If all of the players seated at the table
-have voted to use the shuriken, then we will use one. The use of a shuriken
-is not automatic though.
-]]
+-- Create the shuriken vote button. Each player should press this button to
+-- vote on whether to use a shuriken. If all of the players seated at the table
+-- have voted to use the shuriken, then we will use one. The use of a shuriken
+-- is not automatic though.
+--]]
 function initShurikenButtons()
-    -- TODO: We need to create a coin in the game and place the ID here.
     local shurikenCoin = getObjectFromGUID("15bb08")
     shurikenCoin.clearButtons()
     shurikenCoin.createButton({
@@ -259,6 +308,10 @@ function initShurikenButtons()
         tooltip        = "Vote to use a shuriken",
     })
 end
+
+-- ============================================================================
+-- Vector Initialisation Functions
+-- ============================================================================
 
 function drawLines()
     local lifeBoundLines = {
@@ -328,39 +381,69 @@ function drawLines()
     Global.setVectorLines(vectorLines)
 end
 
+-- ============================================================================
+-- Item Card Functions
+-- ============================================================================
+
 --[[
-Return the only object in this zone. If there is more than one object, this
-function will fail and print out an error to the log.
-]]
-function getZoneObject(zone)
-    if not zone then
-        logError("invalid zone object")
-        return -1
-    end
-    local objs = zone.getObjects()
-    if not objs then
-        logWarn("no objects in zone")
-        return -2
-    end
-    -- Check how many items are in the objs. If there is more than 1 then
-    -- something is not right and we should bail out.
-    local objCount = #objs
-    if objCount > 1 then
-        logWarn("multiple objects in zone - unable to distinguish")
-        return -3
-    end
-    if objCount < 1 then
-        logWarn("no objects in zone")
-        return -2
-    end
-    return objs[1]
+-- How many life cards are currently face up?
+--]]
+function remainingLives()
+    return faceUpCards(lifeCards)
 end
 
 --[[
-Find what level number the players are on. This is determined by getting the
-deck within the current level zone and looking at the bottom card in the object
-list.
-]]
+-- Flip over the next life card in the area to add a new life
+--]]
+function addLife()
+    local lives = remainingLives() + 1
+    ensureFaceUpCount(lifeCards, lives)
+    broadcastToAll("Gained 1 life!")
+end
+
+--[[
+-- Flip over an existing life card to remove a life.
+--]]
+function removeLife()
+    local lives = remainingLives() - 1
+    ensureFaceUpCount(lifeCards, lives)
+    broadcastToAll("Lost 1 life!")
+end
+
+--[[
+-- How many shuriken cards are currently face up?
+--]]
+function remainingShuriken()
+    return faceUpCards(shurikenCards)
+end
+
+--[[
+-- Flip over the next life card in the area to add a new life
+--]]
+function addShuriken()
+    local shuriken = remainingShuriken() + 1
+    ensureFaceUpCount(shurikenCards, shuriken)
+    broadcastToAll("Gained 1 shuriken!")
+end
+
+--[[
+-- Flip over an existing life card to remove a life.
+--]]
+function removeShuriken()
+    local shuriken = remainingShuriken() - 1
+    ensureFaceUpCount(shurikenCards, shuriken)
+    broadcastToAll("Lost 1 shuriken!")
+end
+
+-- ============================================================================
+-- Level Deck Functions
+-- ============================================================================
+
+--[[
+-- Find what level number the players are on. This is determined by getting the
+-- deck within the current level zone and looking at the bottom card in the object
+-- list.
+--]]
 function currentLevel(levelZone)
     local levelsObject = getZoneObject(levelZone)
     if type(levelsObject) == "number" then
@@ -384,13 +467,13 @@ function currentLevel(levelZone)
 end
 
 --[[
-Progresses the level deck in the zone its discard. The argument `gainBonus`
-denotes whether or not a life/shuriken would be gained provided that the current
-level allows it. This flag is used to control whether or not the level
-advancement behaves as though the players completed the level or just decided
-to start elsewhere. The remove bonus does the same but in reverse, e.g. it will
-remove lives. These parameters should be mutually exclusive.
-]]
+-- Progresses the level deck in the zone its discard. The argument `gainBonus`
+-- denotes whether or not a life/shuriken would be gained provided that the current
+-- level allows it. This flag is used to control whether or not the level
+-- advancement behaves as though the players completed the level or just decided
+-- to start elsewhere. The remove bonus does the same but in reverse, e.g. it will
+-- remove lives. These parameters should be mutually exclusive.
+--]]
 function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
     local returnCode = 0
     if gainBonus or removeBonus then
@@ -435,8 +518,8 @@ function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
 end
 
 --[[
-Advance to the next level and gain the rewards.
-]]
+-- Advance to the next level and gain the rewards.
+--]]
 function nextLevel()
     local discardPosition = levelDiscardPosition:copy()
     discardPosition.y = discardPosition.y + 1
@@ -444,18 +527,22 @@ function nextLevel()
 end
 
 --[[
-Move back to the previousLevel and lose the rewards.
-]]
+-- Move back to the previousLevel and lose the rewards.
+--]]
 function previousLevel()
     local discardPosition = levelCurrentPosition:copy()
     discardPosition.y = discardPosition.y + 1
     moveLevel(levelDiscardZone, discardPosition, false, true)
 end
 
+-- ============================================================================
+-- Deck Sorting Functions
+-- ============================================================================
+
 --[[
-Take the cards out of the numberDeck and recreate them in numeric order on the
-discard pile.
-]]
+-- Take the cards out of the numberDeck and recreate them in numeric order on the
+-- discard pile.
+--]]
 function orderNumberDeck()
     local dropPosition = numberDiscardPosition:copy()
     dropPosition.y = 3
@@ -472,9 +559,9 @@ function orderNumberDeck()
 end
 
 --[[
-Take the cards out of the levelsDeck and recreate them in numeric order on the
-discard pile.
-]]
+-- Take the cards out of the levelsDeck and recreate them in numeric order on the
+-- discard pile.
+--]]
 function orderLevelDeck()
     local dropPosition = levelDiscardPosition:copy()
     dropPosition.y = 3
@@ -490,180 +577,15 @@ function orderLevelDeck()
         end)
 end
 
---[[
-Reorder the decks in realtime based on the indices of the cards within the
-cardTable argument. This function essentially loops over a card table and will
-pull out cards from a deck based on the GUID of the object. It will then place
-this onto the new position passed in as the discardPosition. It is important to
-know that this function will very likely destroy the GUID of the old deck.
-You can also pass in an optional callback function will which be called once the
-deck has been completely reordered.
-]]
-function orderDeck(cardTable, deck, movePosition, callback)
-    if not cardTable then return -1 end
-    if not deck then return -2 end
-    if not movePosition then return -3 end
-    local initialObjects = deck.getObjects()
-    local deckSize = #initialObjects
-    local last = nil
-    local frameSleep = 5
-    local frameSleepDelay = 0
-    local callbackDelay = 50
-    for i, card in ipairs(cardTable) do
-        local remaining = deckSize - i
-        if remaining == 0 then frameSleepDelay = 40 end
-        Wait.frames(function()
-            if remaining == 0 then
-                local c = getObjectFromGUID(card.guid)
-                c.setPositionSmooth(movePosition, false, false)
-                return
-            end
-            deck.takeObject({
-                position = movePosition,
-                guid = card.guid})
-        end, (frameSleep * i) + frameSleepDelay)
-    end
-    -- Call the optional callback once the decks have been reordered.
-    if callback then
-        Wait.frames(function()
-            callback()
-        end, (frameSleep * deckSize) + frameSleepDelay + callbackDelay)
-    end
-    return 0
-end
+-- ============================================================================
+-- Number Deck Functions
+-- ============================================================================
 
 --[[
-Find all of the objects within a given radius and return the result. This
-function can also take in an optional filtering function which can remove
-undesirable objects from the final list.
-]]
-function findInRadiusBy(pos, radius, func, debug)
-    local radius = (radius or 1)
-    local objList = Physics.cast({
-        origin=pos, direction={0,1,0}, type=2, size={radius,radius,radius},
-        max_distance=0, debug=(debug or false)
-    })
-    local refinedList = {}
-    for _, obj in ipairs(objList) do
-        if func == nil then
-            table.insert(refinedList, obj.hit_object)
-        else
-            if func(obj.hit_object) then
-                table.insert(refinedList, obj.hit_object)
-            end
-        end
-    end
-    return refinedList
-end
-
---[[
-Check whether the passed in card is face up. This function works based on the
-rotation value of the card. There is a small amount of leeway that is given to
-the rotation of the object in order to account for some physics.
-There is an optional tolerance parameter. This value should be within the range
-of 0-90. It is ideal to use >0 though.
-]]
-function isFaceUp(object, tolerance)
-    if not object then return -1 end
-    if not tolerance then tolerance = 20 end
-    local rotation = object.getRotation()[3]
-    if rotation < tolerance or rotation > (360 - tolerance) then
-        return true
-    end
-    return false
-end
-
---[[
-Count the number of cards in the passed in card table that are currently face
-up someone in the game. This function will not count decks. The cards have to
-be laying relatively flat and individually accessible for them to be counted.
-]]
-function faceUpCards(cardTable)
-    local count = 0
-    for i, card in ipairs(cardTable) do
-        local object = getObjectFromGUID(card.guid)
-        if object and isFaceUp(object) then
-            count = count + 1
-        end
-    end
-    return count
-end
-
---[[
-Flip over the cards in the card table to ensure that only the cards starting
-from 1 and going until `count` will be face up. Any other cards will be turned
-face down.
-]]
-function ensureFaceUpCount(cardTable, count)
-    for i, card in ipairs(cardTable) do
-        local object = getObjectFromGUID(card.guid)
-        if not object then return -1 end
-        local faceUp = isFaceUp(object)
-        if i <= count then
-            -- Make sure that the card is facing up
-            if not faceUp then
-                object.flip()
-            end
-        else
-            -- Make sure that the card is facing down
-            if faceUp then
-                object.flip()
-            end
-        end
-    end
-end
-
---[[
-How many life cards are currently face up?
-]]
-function remainingLives()
-    return faceUpCards(lifeCards)
-end
-
---[[
-Flip over the next life card in the area to add a new life
-]]
-function addLife()
-    local lives = remainingLives() + 1
-    ensureFaceUpCount(lifeCards, lives)
-end
-
---[[
-Flip over an existing life card to remove a life.
-]]
-function removeLife()
-    local lives = remainingLives() - 1
-    ensureFaceUpCount(lifeCards, lives)
-end
-
---[[
-How many shuriken cards are currently face up?
-]]
-function remainingShuriken()
-    return faceUpCards(shurikenCards)
-end
-
---[[
-Flip over the next life card in the area to add a new life
-]]
-function addShuriken()
-    local shuriken = remainingShuriken() + 1
-    ensureFaceUpCount(shurikenCards, shuriken)
-end
-
---[[
-Flip over an existing life card to remove a life.
-]]
-function removeShuriken()
-    local shuriken = remainingShuriken() - 1
-    ensureFaceUpCount(shurikenCards, shuriken)
-end
-
---[[
-Deal cards equal to the current level count to all of the seated players at the
-table. This function assumes that the numbers deck has been recreated and
-shuffled.
-]]
+-- Deal cards equal to the current level count to all of the seated players at the
+-- table. This function assumes that the numbers deck has been recreated and
+-- shuffled.
+--]]
 function dealNumberCards()
     local deck = getZoneObject(numberDeckZone)
     if type(deck) == "number" then
@@ -684,11 +606,11 @@ function dealNumberCards()
 end
 
 --[[
-Gather all of the number cards from the discard pile and move them to the normal
-deck position. Shuffle the deck ready for the cards to be dealt out. This
-function can receive an optional callback which will be called once all of the
-cards have been pulled back into the deck and recreated.
-]]
+-- Gather all of the number cards from the discard pile and move them to the normal
+-- deck position. Shuffle the deck ready for the cards to be dealt out. This
+-- function can receive an optional callback which will be called once all of the
+-- cards have been pulled back into the deck and recreated.
+--]]
 function resetNumberCards()
     local discardObjs = numberDiscardZone.getObjects()
     if not discardObjs then
@@ -724,12 +646,16 @@ function resetNumberCards()
     return 0
 end
 
+-- ============================================================================
+-- Shuriken Voting Functions
+-- ============================================================================
+
 --[[
-Handle the vote shuriken button. If this is the first time then we will
-start a new vote. After 5 seconds, depending on the number of seated players
-who have voted to use a shuriken, we will either stop the vote or use a
-shuriken.
-]]
+-- Handle the vote shuriken button. If this is the first time then we will
+-- start a new vote. After 5 seconds, depending on the number of seated players
+-- who have voted to use a shuriken, we will either stop the vote or use a
+-- shuriken.
+--]]
 function voteShurikenHandler(obj, playerColor, altClick)
     if not shurikenVotes then
         shurikenVotes = {}
@@ -742,9 +668,9 @@ function voteShurikenHandler(obj, playerColor, altClick)
 end
 
 --[[
-Check whether all of the players have voted to use a shuriken. If they have
-then remove a shuriken and reset the shuriken vote data.
-]]
+-- Check whether all of the players have voted to use a shuriken. If they have
+-- then remove a shuriken and reset the shuriken vote data.
+--]]
 function checkShurikenVotes()
     if not shurikenVotes then
        logWarn("no active shuriken vote")
@@ -760,8 +686,8 @@ function checkShurikenVotes()
 end
 
 --[[
-Cast a vote for the player color within the vote table.
-]]
+-- Cast a vote for the player color within the vote table.
+--]]
 function castVote(playerColor, voteTable)
     if not playerColor then return -1 end
     if not voteTable then return -2 end
@@ -769,8 +695,177 @@ function castVote(playerColor, voteTable)
 end
 
 --[[
-Gathers a list of all the seated players at the table.
-]]
+-- Check whether all of the players seated around the table have voted
+-- on whether they should use a shuriken.
+--]]
+function allColorsVoted(voteTable)
+    local seated = seatedPlayers()
+    for i, player in ipairs(seated) do
+        if not voteTable[player.color] then
+            return false
+        end
+    end
+    return true
+end
+
+-- ============================================================================
+-- Util Functions
+-- ============================================================================
+
+--[[
+-- Return the only object in this zone. If there is more than one object, this
+-- function will fail and print out an error to the log.
+--]]
+function getZoneObject(zone)
+    if not zone then
+        logError("invalid zone object")
+        return -1
+    end
+    local objs = zone.getObjects()
+    if not objs then
+        logWarn("no objects in zone")
+        return -2
+    end
+    -- Check how many items are in the objs. If there is more than 1 then
+    -- something is not right and we should bail out.
+    local objCount = #objs
+    if objCount > 1 then
+        logWarn("multiple objects in zone - unable to distinguish")
+        return -3
+    end
+    if objCount < 1 then
+        logWarn("no objects in zone")
+        return -2
+    end
+    return objs[1]
+end
+
+--[[
+-- Reorder the decks in realtime based on the indices of the cards within the
+-- cardTable argument. This function essentially loops over a card table and will
+-- pull out cards from a deck based on the GUID of the object. It will then place
+-- this onto the new position passed in as the discardPosition. It is important to
+-- know that this function will very likely destroy the GUID of the old deck.
+-- You can also pass in an optional callback function will which be called once the
+-- deck has been completely reordered.
+--]]
+function orderDeck(cardTable, deck, movePosition, callback)
+    if not cardTable then return -1 end
+    if not deck then return -2 end
+    if not movePosition then return -3 end
+    local initialObjects = deck.getObjects()
+    local deckSize = #initialObjects
+    local last = nil
+    local frameSleep = 5
+    local frameSleepDelay = 0
+    local callbackDelay = 50
+    for i, card in ipairs(cardTable) do
+        local remaining = deckSize - i
+        if remaining == 0 then frameSleepDelay = 40 end
+        Wait.frames(function()
+            if remaining == 0 then
+                local c = getObjectFromGUID(card.guid)
+                c.setPositionSmooth(movePosition, false, false)
+                return
+            end
+            deck.takeObject({
+                position = movePosition,
+                guid = card.guid})
+        end, (frameSleep * i) + frameSleepDelay)
+    end
+    -- Call the optional callback once the decks have been reordered.
+    if callback then
+        Wait.frames(function()
+            callback()
+        end, (frameSleep * deckSize) + frameSleepDelay + callbackDelay)
+    end
+    return 0
+end
+
+--[[
+-- Find all of the objects within a given radius and return the result. This
+-- function can also take in an optional filtering function which can remove
+-- undesirable objects from the final list.
+--]]
+function findInRadiusBy(pos, radius, func, debug)
+    local radius = (radius or 1)
+    local objList = Physics.cast({
+        origin=pos, direction={0,1,0}, type=2, size={radius,radius,radius},
+        max_distance=0, debug=(debug or false)
+    })
+    local refinedList = {}
+    for _, obj in ipairs(objList) do
+        if func == nil then
+            table.insert(refinedList, obj.hit_object)
+        else
+            if func(obj.hit_object) then
+                table.insert(refinedList, obj.hit_object)
+            end
+        end
+    end
+    return refinedList
+end
+
+--[[
+-- Check whether the passed in card is face up. This function works based on the
+-- rotation value of the card. There is a small amount of leeway that is given to
+-- the rotation of the object in order to account for some physics.
+-- There is an optional tolerance parameter. This value should be within the range
+-- of 0-90. It is ideal to use >0 though.
+--]]
+function isFaceUp(object, tolerance)
+    if not object then return -1 end
+    if not tolerance then tolerance = 20 end
+    local rotation = object.getRotation()[3]
+    if rotation < tolerance or rotation > (360 - tolerance) then
+        return true
+    end
+    return false
+end
+
+--[[
+-- Count the number of cards in the passed in card table that are currently face
+-- up someone in the game. This function will not count decks. The cards have to
+-- be laying relatively flat and individually accessible for them to be counted.
+--]]
+function faceUpCards(cardTable)
+    local count = 0
+    for i, card in ipairs(cardTable) do
+        local object = getObjectFromGUID(card.guid)
+        if object and isFaceUp(object) then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+--[[
+-- Flip over the cards in the card table to ensure that only the cards starting
+-- from 1 and going until `count` will be face up. Any other cards will be turned
+-- face down.
+--]]
+function ensureFaceUpCount(cardTable, count)
+    for i, card in ipairs(cardTable) do
+        local object = getObjectFromGUID(card.guid)
+        if not object then return -1 end
+        local faceUp = isFaceUp(object)
+        if i <= count then
+            -- Make sure that the card is facing up
+            if not faceUp then
+                object.flip()
+            end
+        else
+            -- Make sure that the card is facing down
+            if faceUp then
+                object.flip()
+            end
+        end
+    end
+end
+
+--[[
+-- Gathers a list of all the seated players at the table.
+--]]
 function seatedPlayers()
     local players = Player.getPlayers()
     local seatedPlayers = {}
@@ -785,55 +880,21 @@ function seatedPlayers()
 end
 
 --[[
-Check whether all of the players seated around the table have voted
-on whether they should use a shuriken.
-]]
-function allColorsVoted(voteTable)
-    local seated = seatedPlayers()
-    for i, player in ipairs(seated) do
-        if not voteTable[player.color] then
-            return false
-        end
-    end
-    return true
-end
-
---[[
-Log an error to the in game log. This function will make sure that the text
-is printed in red.
-]]
-function logError(var)
-    logStyle("error", "Red")
-    log("Error: "..var, nil, "error")
-end
-
---[[
-Log a warning to the in game log. This function will make sure that the text
-is printed in blue.
-]]
+-- Log a warning to the in game log. This function will make sure that the text
+-- is printed in blue.
+--]]
 function logWarn(var)
     logStyle("warn", "Blue")
     log(var, "Warn: ", "warn")
 end
 
---[[ The onLoad event is called after the game save finishes loading.--]]
-function onLoad()
-    initNumberCards()
-    initLevelCards()
-    initLifeCards()
-    initShurikenCards()
-    initLevelButtons()
-    initNumbersButtons()
-    initShurikenButtons()
-    drawLines()
-    local level = currentLevel(levelCurrentZone)
-    if type(level) == "table" then
-        log("Level: "..level.value)
-    end
-    -- log(orderNumberDeck())
-    -- log(orderLevelDeck())
-    log("Lives: "..remainingLives())
-    log("Shuriken: "..remainingShuriken())
-    -- removeLife()
-    -- removeShuriken()
+--[[
+-- Log an error to the in game log. This function will make sure that the text
+-- is printed in red.
+--]]
+function logError(var)
+    logStyle("error", "Red")
+    log("Error: "..var, nil, "error")
 end
+
+
