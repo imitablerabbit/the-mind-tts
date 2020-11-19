@@ -786,14 +786,14 @@ end
 -- Check whether a deck is in either ascending or descending order based
 -- on the "value" key in the decks lookup table.
 --]]
-function isDeckOrdered(deck, lookup, ascending)
+function isDeckOrdered(cardTable, deck, ascending)
     if not deck then return -1 end
-    if not lookup then return -2 end
+    if not cardTable then return -2 end
     local cards = deck.getObjects()
     if not cards then return -3 end
     local previous = nil
     for i, card in ipairs(cards) do
-        local data = lookup[card.guid]
+        local data = cardTable[card.guid]
         if not data then return -4 end
         if previous == nil then
             previous = data.value
