@@ -8,6 +8,9 @@ numberDeckPosition = nil
 numberDiscardZone = nil
 numberDiscardPosition = nil
 numberDeck = nil
+numberDiscardDeck = nil
+numberCheckTriggerCount = 30
+numberCheckCount = 0
 
 levelCards = {}
 levelCardsLookup = {}
@@ -19,6 +22,7 @@ levelDeck = nil
 
 lifeCards = {}
 lifeCardsLookup = {}
+playingRound = false
 
 shurikenCards = {}
 shurikenCardsLookup = {}
@@ -28,7 +32,9 @@ shurikenVotes = nil -- only populated during a vote
 -- Global Callback Functions
 -- ============================================================================
 
---[[ The onLoad event is called after the game save finishes loading.--]]
+--[[
+-- The onLoad event is called after the game save finishes loading.
+--]]
 function onLoad()
     initNumberCards()
     initLevelCards()
@@ -38,16 +44,45 @@ function onLoad()
     initNumbersButtons()
     initShurikenButtons()
     drawLines()
-    local level = currentLevel(levelCurrentZone)
-    if type(level) == "table" then
-        log("Level: "..level.value)
+    startLuaCoroutine(Global, "checkNumberDeck")
+end
+
+--[[
+-- Checks whether the numbers discard deck is in numerical order.
+-- The deck will be checked every 30 frames. If it is not in order then the
+-- players will lose a life automatically.
+--]]
+function onUpdate()
+    numberCheckCount = numberCheckCount + 1
+    if numberCheckCount < numberCheckTriggerCount or not playingRound then
+        return
     end
-    -- log(orderNumberDeck())
-    -- log(orderLevelDeck())
-    log("Lives: "..remainingLives())
-    log("Shuriken: "..remainingShuriken())
-    -- removeLife()
-    -- removeShuriken()
+    numberCheckCount = 0
+    if not numberDiscardDeck then
+        local deck = getZoneObject(numberDiscardZone)
+        if type(deck) ~= "number" and deck and deck.tag == "Deck" then
+            numberDiscardDeck = deck
+        else
+            return
+        end
+    end
+    local ordered = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
+    if type(ordered) ~= "number" and not ordered then
+        broadcastToAll("Thats not a consecutive card!")
+        removeLife()
+        playingRound = false
+        -- Recreate the discard deck but this time in order. Then start checking
+        -- the order again. Currently this is not able to account for multiple
+        -- playing cards out of order at the same time.
+        local callback = function()
+            -- Reset the discard deck so that the next tick can find
+            -- it and check the order again. No point in trying to
+            -- find it again here.
+            numberDiscardDeck = nil
+            playingRound = true
+        end
+        orderNumberDiscardDeck(callback)
+    end
 end
 
 -- ============================================================================
@@ -254,13 +289,13 @@ function initLevelButtons()
         width          = 2500,
         height         = 1000,
         font_size      = 500,
-        tooltip        = "Go back to the next level",
+        tooltip        = "Advance to the next level",
     })
 end
 
 function initNumbersButtons()
-    local resetCoin = getObjectFromGUID("b50b8c")
-    local dealCoin = getObjectFromGUID("c15ecd")
+    local resetCoin = getObjectFromGUID("c15ecd")
+    local dealCoin = getObjectFromGUID("b50b8c")
     resetCoin.clearButtons()
     resetCoin.createButton({
         click_function = "resetNumberCards",
@@ -540,6 +575,25 @@ end
 -- ============================================================================
 
 --[[
+-- Sort the number discard deck back into numerical order. This is called when
+-- the players have made a mistake and the order is no longer sequential. Note
+-- this function can take in the callback which is then passed into the generic
+-- sorting function.
+--]]
+function orderNumberDiscardDeck(callback)
+    local dropPosition = numberDiscardPosition:copy()
+    dropPosition.y = 2
+    local deckPosition = numberDiscardDeck.getPosition()
+    local newDeckPosition = deckPosition:copy()
+    newDeckPosition.x = newDeckPosition.x - 3
+    numberDiscardDeck.setPosition(newDeckPosition)
+    Wait.frames(
+        function()
+            orderDeck(numberCards, numberDiscardDeck, dropPosition, callback)
+        end, 20)
+end
+
+--[[
 -- Take the cards out of the numberDeck and recreate them in numeric order on the
 -- discard pile.
 --]]
@@ -602,6 +656,7 @@ function dealNumberCards()
         return -3
     end
     deck.deal(current.value)
+    playingRound = true
     return 0
 end
 
@@ -643,6 +698,8 @@ function resetNumberCards()
         end
         deck.shuffle()
     end, 60)
+    numberDiscardDeck = nil
+    playingRound = false
     return 0
 end
 
@@ -758,20 +815,26 @@ function orderDeck(cardTable, deck, movePosition, callback)
     local last = nil
     local frameSleep = 5
     local frameSleepDelay = 0
-    local callbackDelay = 50
+    local callbackDelay = 100
+    local x = 1
     for i, card in ipairs(cardTable) do
-        local remaining = deckSize - i
-        if remaining == 0 then frameSleepDelay = 40 end
-        Wait.frames(function()
-            if remaining == 0 then
-                local c = getObjectFromGUID(card.guid)
-                c.setPositionSmooth(movePosition, false, false)
-                return
+        local remaining = deckSize - x
+        if remaining == 0 then frameSleepDelay = 5 end
+        for j, obj in ipairs(initialObjects) do
+            if obj.guid == card.guid then
+                Wait.frames(function()
+                    if remaining == 0 then
+                        local c = getObjectFromGUID(card.guid)
+                        c.setPositionSmooth(movePosition, false, false)
+                        return
+                    end
+                    deck.takeObject({
+                        position = movePosition,
+                        guid = card.guid})
+                end, (frameSleep * x) + frameSleepDelay)
+                x = x + 1
             end
-            deck.takeObject({
-                position = movePosition,
-                guid = card.guid})
-        end, (frameSleep * i) + frameSleepDelay)
+        end
     end
     -- Call the optional callback once the decks have been reordered.
     if callback then
@@ -795,13 +858,14 @@ function isDeckOrdered(cardTable, deck, ascending)
     for i, card in ipairs(cards) do
         local data = cardTable[card.guid]
         if not data then return -4 end
-        if previous == nil then
-            previous = data.value
-        elseif ascending and previous < data.value then
-            return false
-        elseif not ascending and previous > data.value then
-            return false
+        if previous ~= nil then
+            if ascending and previous < data.value then
+                return false
+            elseif not ascending and previous > data.value then
+                return false
+            end
         end
+        previous = data.value
     end
     return true
 end
@@ -909,7 +973,7 @@ end
 --]]
 function logWarn(var)
     logStyle("warn", "Blue")
-    log(var, "Warn: ", "warn")
+    log("Warn: "..var, nil, "warn")
 end
 
 --[[
@@ -920,5 +984,3 @@ function logError(var)
     logStyle("error", "Red")
     log("Error: "..var, nil, "error")
 end
-
-
