@@ -66,22 +66,47 @@ function onUpdate()
             return
         end
     end
-    local ordered = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
+    local ordered, card = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
     if type(ordered) ~= "number" and not ordered then
-        broadcastToAll("Thats not a consecutive card!")
+        broadcastToAll("That's not a consecutive card!")
         removeLife()
         playingRound = false
-        -- Recreate the discard deck but this time in order. Then start checking
-        -- the order again. Currently this is not able to account for multiple
-        -- playing cards out of order at the same time.
-        local callback = function()
-            -- Reset the discard deck so that the next tick can find
-            -- it and check the order again. No point in trying to
-            -- find it again here.
-            numberDiscardDeck = nil
-            playingRound = true
+        -- Move the discard pile off to the side slightly. This will then get
+        -- ordered along side any loose cards in players hands.
+        local deckPosition = numberDiscardDeck.getPosition()
+        local newDeckPosition = deckPosition:copy()
+        newDeckPosition.x = newDeckPosition.x - 3
+        numberDiscardDeck.setPosition(newDeckPosition)
+        -- Move any loose cards to the number discard pile if they have a lower
+        -- value that the highest card within the ordered deck.
+        local allObjects = getAllObjects()
+        if allObjects then
+            for i, object in ipairs(allObjects) do
+                if object.tag == "Card" then
+                    local data = numberCardsLookup[object.guid]
+                    if data and data.value < card.value then
+                        Wait.frames(
+                            function()
+                                object.setPosition(newDeckPosition)
+                            end, 10)
+                    end
+                end
+            end
         end
-        orderNumberDiscardDeck(callback)
+        -- Reorder the discard pile so that everything is back into numeric order.
+        local dropPosition = numberDiscardPosition:copy()
+        dropPosition.y = 2
+        Wait.frames(
+            function()
+                orderDeck(numberCards, numberDiscardDeck, dropPosition,
+                    function()
+                        -- Reset the discard deck so that the next tick can find
+                        -- it and check the order again. No point in trying to
+                        -- find it again here.
+                        numberDiscardDeck = nil
+                        playingRound = true
+                    end)
+            end, 30)
     end
 end
 
@@ -581,16 +606,7 @@ end
 -- sorting function.
 --]]
 function orderNumberDiscardDeck(callback)
-    local dropPosition = numberDiscardPosition:copy()
-    dropPosition.y = 2
-    local deckPosition = numberDiscardDeck.getPosition()
-    local newDeckPosition = deckPosition:copy()
-    newDeckPosition.x = newDeckPosition.x - 3
-    numberDiscardDeck.setPosition(newDeckPosition)
-    Wait.frames(
-        function()
-            orderDeck(numberCards, numberDiscardDeck, dropPosition, callback)
-        end, 20)
+
 end
 
 --[[
@@ -847,7 +863,8 @@ end
 
 --[[
 -- Check whether a deck is in either ascending or descending order based
--- on the "value" key in the decks lookup table.
+-- on the "value" key in the decks lookup table. If the deck is not in order,
+-- this function will return the last card that was in order.
 --]]
 function isDeckOrdered(cardTable, deck, ascending)
     if not deck then return -1 end
@@ -859,15 +876,15 @@ function isDeckOrdered(cardTable, deck, ascending)
         local data = cardTable[card.guid]
         if not data then return -4 end
         if previous ~= nil then
-            if ascending and previous < data.value then
-                return false
-            elseif not ascending and previous > data.value then
-                return false
+            if ascending and previous.value < data.value then
+                return false, previous
+            elseif not ascending and previous.value > data.value then
+                return false, previous
             end
         end
-        previous = data.value
+        previous = data
     end
-    return true
+    return true, nil
 end
 
 --[[
