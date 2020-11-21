@@ -52,19 +52,20 @@ end
 -- players will lose a life automatically.
 --]]
 function onUpdate()
+    -- Check if we have waited for enough frames to do a proper check.
     numberCheckCount = numberCheckCount + 1
     if numberCheckCount < numberCheckTriggerCount or not playingRound then
         return
     end
     numberCheckCount = 0
-    if not numberDiscardDeck then
-        local deck = getZoneObject(numberDiscardZone)
-        if type(deck) ~= "number" and deck and deck.tag == "Deck" then
-            numberDiscardDeck = deck
-        else
-            return
-        end
+    -- Check for a deck in the discard pile. If there was nothing there then we
+    -- can quit early. No need to check for sequential cards when there would
+    -- only be a singe card in the zone.
+    local discard = findNumberDiscard()
+    if not discard and not isDeck(discard) then
+        return
     end
+    numberDiscardDeck = discard
     local ordered, card = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
     if type(ordered) ~= "number" and not ordered then
         broadcastToAll("That's not a consecutive card!")
@@ -666,6 +667,18 @@ function dealNumberCards()
 end
 
 --[[
+-- Search for object in the discard zone. If anything could be found then return
+-- that object.
+--]]
+function findNumberDiscard()
+    local deck = getZoneObject(numberDiscardZone)
+    if type(deck) ~= "table" then
+        return nil
+    end
+    return deck
+end
+
+--[[
 -- Gather all of the number cards from the discard pile and move them to the normal
 -- deck position. Shuffle the deck ready for the cards to be dealt out. This
 -- function can receive an optional callback which will be called once all of the
@@ -891,6 +904,24 @@ function getZoneObject(zone)
         return -2
     end
     return objs[1]
+end
+
+--[[
+-- Check whether the passed in object is a deck.
+--]]
+function isDeck(object)
+    assert(object, "undefined object")
+    assert(type(object) == "table", "invalid type")
+    return object.tag == "Deck"
+end
+
+--[[
+-- Check whether the passed in object is a card.
+--]]
+function isCard(object)
+    assert(object, "undefined object")
+    assert(type(object) == "table", "invalid type")
+    return object.tag == "Card"
 end
 
 --[[
