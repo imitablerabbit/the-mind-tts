@@ -7,6 +7,8 @@ numberDeckZone = nil
 numberDeckPosition = nil
 numberDiscardZone = nil
 numberDiscardPosition = nil
+numberDiscardReorderPosition = nil
+numberDiscardReorderRotation = nil
 numberDeck = nil
 numberDiscardDeck = nil
 numberCheckTriggerCount = 30
@@ -27,6 +29,8 @@ playingRound = false
 shurikenCards = {}
 shurikenCardsLookup = {}
 shurikenVotes = nil -- only populated during a vote
+
+debug = false --  Can be set by running 'lua debug=true' on the in game console
 
 -- ============================================================================
 -- Global Callback Functions
@@ -62,51 +66,39 @@ function onUpdate()
     -- can quit early. No need to check for sequential cards when there would
     -- only be a singe card in the zone.
     local discard = findNumberDiscard()
-    if not discard and not isDeck(discard) then
+    if discard == nil or not isDeck(discard) then
         return
     end
     numberDiscardDeck = discard
-    local ordered, card = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
-    if type(ordered) ~= "number" and not ordered then
+    local ordered, highestCard = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
+    if not ordered then
         broadcastToAll("That's not a consecutive card!")
         removeLife()
         playingRound = false
         -- Move the discard pile off to the side slightly. This will then get
         -- ordered along side any loose cards in players hands.
-        local deckPosition = numberDiscardDeck.getPosition()
-        local newDeckPosition = deckPosition:copy()
-        newDeckPosition.x = newDeckPosition.x - 3
-        numberDiscardDeck.setPosition(newDeckPosition)
+        local deckPosition = numberDiscardPosition:copy()
+        moveToDiscardReorderPosition(numberDiscardDeck)
         -- Move any loose cards to the number discard pile if they have a lower
-        -- value that the highest card within the ordered deck.
+        -- value than the highest card within the ordered deck.
         local allObjects = getAllObjects()
         if allObjects then
             for i, object in ipairs(allObjects) do
                 if object.tag == "Card" then
                     local data = numberCardsLookup[object.guid]
-                    if data and data.value < card.value then
+                    if data and data.value < highestCard.value then
                         Wait.frames(
                             function()
-                                object.setPosition(newDeckPosition)
-                            end, 10)
+                                moveToDiscardReorderPosition(object)
+                            end, 40)
                     end
                 end
             end
         end
-        -- Reorder the discard pile so that everything is back into numeric order.
-        local dropPosition = numberDiscardPosition:copy()
-        dropPosition.y = 2
         Wait.frames(
             function()
-                orderDeck(numberCards, numberDiscardDeck, dropPosition,
-                    function()
-                        -- Reset the discard deck so that the next tick can find
-                        -- it and check the order again. No point in trying to
-                        -- find it again here.
-                        numberDiscardDeck = nil
-                        playingRound = true
-                    end)
-            end, 40)
+                orderNumberDiscardReorderDeck()
+            end, 80)
     end
 end
 
@@ -223,9 +215,11 @@ function initNumberCards()
         numberCardsLookup[card.guid] = card
     end
     numberDeckZone = getObjectFromGUID('fe3494')
-    numberDeckPosition = {-3.00, 1.46, 0.00}
+    numberDeckPosition = {-3.00, 2, 0.00}
     numberDiscardZone = getObjectFromGUID('79b9e2')
-    numberDiscardPosition = Vector(-6.00, 0.97, 0.00)
+    numberDiscardPosition = Vector(-6.00, 2, 0.00)
+    numberDiscardReorderPosition = Vector(-9.00, 2, 0.00)
+    numberDiscardReorderRotation = Vector(0.00, 0, 0.00)
     numberDeck = numberDeckZone.getObjects()[1]
 end
 
@@ -251,9 +245,9 @@ function initLevelCards()
         levelCardsLookup[card.guid] = card
     end
     levelCurrentZone = getObjectFromGUID("f8d8a1")
-    levelCurrentPosition = Vector(6.00, 0.97, 0.00)
+    levelCurrentPosition = Vector(6.00, 2, 0.00)
     levelDiscardZone = getObjectFromGUID("4f02e7")
-    levelDiscardPosition = Vector(3.00, 0.97, 0.00)
+    levelDiscardPosition = Vector(3.00, 2, 0.00)
     levelDeck = levelCurrentZone.getObjects()[1]
 end
 
@@ -582,7 +576,6 @@ end
 --]]
 function nextLevel()
     local discardPosition = levelDiscardPosition:copy()
-    discardPosition.y = discardPosition.y + 1
     moveLevel(levelCurrentZone, discardPosition, true, false)
 end
 
@@ -591,7 +584,6 @@ end
 --]]
 function previousLevel()
     local discardPosition = levelCurrentPosition:copy()
-    discardPosition.y = discardPosition.y + 1
     moveLevel(levelDiscardZone, discardPosition, false, true)
 end
 
@@ -616,6 +608,40 @@ function orderNumberDeck()
             if not deckObjects then return end
             numberDeck = deckObjects[1]
         end)
+end
+
+--[[
+-- This function will search for card and deck objects that have been placed
+-- in the reorder position and then sort them back into the discard position.
+--]]
+function orderNumberDiscardReorderDeck()
+    -- Maybe all the loose cards have just formed a new discard deck.
+    -- Check for it using the find object function.
+    -- TODO: add a reorder discard zone for this and then change to the
+    -- zone function instead.
+    local discardObjects = findInRadiusBy(numberDiscardReorderPosition, 4,
+        function(obj)
+            if obj.tag == "Deck" or obj.tag == "Card" then
+                return true
+            end
+            return false
+        end)
+    if discardObjects == nil or #discardObjects == 0 then return end
+    local discardObject = discardObjects[1] -- Shhh, just pretend this is the only object.
+    if discardObject.tag == "Deck" then
+        numberDiscardDeck = discardObject
+        orderDeck(numberCards, numberDiscardDeck, numberDiscardPosition,
+            function()
+                -- Reset the discard deck so that the next tick can find
+                -- it and check the order again. No point in trying to
+                -- find it again here.
+                numberDiscardDeck = nil
+                playingRound = true
+            end)
+    elseif discardObject.tag == "Card" then
+        discardObject.setPositionSmooth(numberDiscardPosition, false, false)
+        playingRound = true
+    end
 end
 
 --[[
@@ -672,10 +698,24 @@ end
 --]]
 function findNumberDiscard()
     local deck = getZoneObject(numberDiscardZone)
-    if type(deck) ~= "table" then
+    if type(deck) ~= "userdata" then
         return nil
     end
     return deck
+end
+
+--[[
+-- Move any deck or card object passed into this function to the discard
+-- reordering zone.
+--]]
+function moveToDiscardReorderPosition(object)
+    assert(object ~= nil, "undefined")
+    assert(type(object) == "userdata", "invalid type")
+    if object.tag ~= "Deck" and object.tag ~= "Card" then
+        return
+    end
+    object.setPosition(numberDiscardReorderPosition)
+    object.setRotation(numberDiscardReorderRotation)
 end
 
 --[[
@@ -748,7 +788,7 @@ end
 --]]
 function checkShurikenVotes()
     if not shurikenVotes then
-       logWarn("no active shuriken vote")
+       logDebug("no active shuriken vote")
        return -1
     end
     if allColorsVoted(shurikenVotes) then
@@ -769,12 +809,11 @@ function useShuriken()
     removeShuriken()
     playingRound = false
     -- Move the discard pile off to the side slightly. This will then get
-    -- ordered along side any loose cards in players hands.
-    local newDeckPosition = numberDiscardPosition:copy()
-    newDeckPosition.x = newDeckPosition.x - 3
-    local discardObject = getZoneObject(numberDiscardZone)
-    if type(discardObject) ~= "number" and discardObject ~= nil then
-        discardObject.setPosition(newDeckPosition)
+    -- ordered along side any loose cards in players hands. This does not matter
+    -- if it is a deck or a card.
+    local discardObject = findNumberDiscard()
+    if discardObject ~= nil then
+        moveToDiscardReorderPosition(discardObject)
     end
     -- Move the lowest cards from the players hand to the same position as the
     -- discard pile.
@@ -797,7 +836,7 @@ function useShuriken()
                             end
                         end
                         if lowestObject ~= nil then
-                            lowestObject.setPosition(newDeckPosition)
+                            moveToDiscardReorderPosition(lowestObject)
                         end
                     end
                 end
@@ -805,49 +844,9 @@ function useShuriken()
         end, 10)
     -- Reorder the discard pile so that everything is back into numeric order.
     local dropPosition = numberDiscardPosition:copy()
-    dropPosition.y = 2
     Wait.frames(
         function()
-            -- Maybe all the loose cards have just formed a new discard deck.
-            -- Check for it using the typical zone object functions.
-            if numberDiscardDeck == nil then
-                local discardObjects = findInRadiusBy(newDeckPosition, 4,
-                    function(obj)
-                        if obj.tag == "Deck" or obj.tag == "Card" then
-                            return true
-                        end
-                        return false
-                    end)
-                -- Shhh, just pretend this is the only object.
-                local discardObject = discardObjects[1]
-                if discardObject ~= nil and type(discardObject) ~= "number" then
-                    if discardObject.tag == "Deck" then
-                        numberDiscardDeck = discardObject
-                        orderDeck(numberCards, numberDiscardDeck, dropPosition,
-                            function()
-                                -- Reset the discard deck so that the next tick can find
-                                -- it and check the order again. No point in trying to
-                                -- find it again here.
-                                numberDiscardDeck = nil
-                                playingRound = true
-                            end)
-                    elseif discardObject.tag == "Card" then
-                        discardObject.setPositionSmooth(dropPosition, false, false)
-                        playingRound = true
-                    else
-                        playingRound = true
-                    end
-                end
-            else
-                orderDeck(numberCards, numberDiscardDeck, dropPosition,
-                    function()
-                        -- Reset the discard deck so that the next tick can find
-                        -- it and check the order again. No point in trying to
-                        -- find it again here.
-                        numberDiscardDeck = nil
-                        playingRound = true
-                    end)
-            end
+            orderNumberDiscardReorderDeck()
         end, 40)
 end
 
@@ -883,24 +882,21 @@ end
 -- function will fail and print out an error to the log.
 --]]
 function getZoneObject(zone)
-    if not zone then
-        logError("invalid zone object")
-        return -1
-    end
+    assert(zone ~= nil, "undefined")
+    assert(type(zone) == "userdata", "invalid type")
     local objs = zone.getObjects()
     if not objs then
-        logWarn("no objects in zone")
-        return -2
+        return nil
     end
     -- Check how many items are in the objs. If there is more than 1 then
     -- something is not right and we should bail out.
     local objCount = #objs
     if objCount > 1 then
-        logWarn("multiple objects in zone - unable to distinguish")
-        return -3
+        logDebug("multiple objects in zone - unable to distinguish")
+        return nil
     end
     if objCount < 1 then
-        logWarn("no objects in zone")
+        logDebug("no objects in zone")
         return -2
     end
     return objs[1]
@@ -910,8 +906,8 @@ end
 -- Check whether the passed in object is a deck.
 --]]
 function isDeck(object)
-    assert(object, "undefined object")
-    assert(type(object) == "table", "invalid type")
+    assert(object ~= nil, "undefined object")
+    assert(type(object) == "userdata", "invalid type")
     return object.tag == "Deck"
 end
 
@@ -919,8 +915,8 @@ end
 -- Check whether the passed in object is a card.
 --]]
 function isCard(object)
-    assert(object, "undefined object")
-    assert(type(object) == "table", "invalid type")
+    assert(object ~= nil, "undefined object")
+    assert(type(object) == "userdata", "invalid type")
     return object.tag == "Card"
 end
 
@@ -934,10 +930,15 @@ end
 -- deck has been completely reordered.
 --]]
 function orderDeck(cardTable, deck, movePosition, callback)
-    if not cardTable then return -1 end
-    if not deck then return -2 end
-    if not movePosition then return -3 end
+    assert(cardTable ~= nil, "undefined")
+    assert(deck ~= nil, "undefined")
+    assert(movePosition ~= nil, "undefined")
+    assert(type(cardTable) == "table", "invalid type")
+    assert(type(deck) == "userdata" and deck.tag == "Deck", "invalid type")
+    assert(type(movePosition) == "userdata" or type(movePosition) == "table",
+        "invalid type")
     local initialObjects = deck.getObjects()
+    assert(initialObjects ~= nil, "invalid deck")
     local deckSize = #initialObjects
     local last = nil
     local frameSleep = 5
@@ -949,44 +950,50 @@ function orderDeck(cardTable, deck, movePosition, callback)
         if remaining == 0 then frameSleepDelay = 5 end
         for j, obj in ipairs(initialObjects) do
             if obj.guid == card.guid then
-                Wait.frames(function()
-                    if remaining == 0 then
-                        local c = getObjectFromGUID(card.guid)
-                        c.setPositionSmooth(movePosition, false, false)
-                        return
-                    end
-                    deck.takeObject({
-                        position = movePosition,
-                        guid = card.guid})
-                end, (frameSleep * x) + frameSleepDelay)
+                Wait.frames(
+                    function()
+                        if remaining == 0 then
+                            local c = getObjectFromGUID(card.guid)
+                            c.setPositionSmooth(movePosition, false, false)
+                            return
+                        end
+                        deck.takeObject({
+                            position = movePosition,
+                            guid = card.guid})
+                    end, (frameSleep * x) + frameSleepDelay)
                 x = x + 1
             end
         end
     end
-    -- Call the optional callback once the decks have been reordered.
+    -- Call the optional callback once the decks have been reordered. This will
+    -- give ample time for all the cards to be moved.
     if callback then
-        Wait.frames(function()
-            callback()
-        end, (frameSleep * deckSize) + frameSleepDelay + callbackDelay)
+        Wait.frames(
+            function()
+                callback()
+            end, (frameSleep * deckSize) + frameSleepDelay + callbackDelay)
     end
-    return 0
+    return
 end
 
 --[[
 -- Check whether a deck is in either ascending or descending order based
 -- on the "value" key in the decks lookup table. If the deck is not in order,
--- this function will return the last card that was in order.
+-- this function will return the last card that was in order. If there are any
+-- cards in the deck which are not in the cardTable, they will be ignored.
 --]]
 function isDeckOrdered(cardTable, deck, ascending)
-    if not deck then return -1 end
-    if not cardTable then return -2 end
+    assert(cardTable ~= nil, "undefined")
+    assert(deck ~= nil, "undefined")
+    assert(type(cardTable) == "table", "invalid type")
+    assert(type(deck) == "userdata" and deck.tag == "Deck", "invalid type")
+    if ascending == nil then ascending = true end
     local cards = deck.getObjects()
-    if not cards then return -3 end
+    assert(cards ~= nil, "invalid deck")
     local previous = nil
     for i, card in ipairs(cards) do
         local data = cardTable[card.guid]
-        if not data then return -4 end
-        if previous ~= nil then
+        if data ~= nil and previous ~= nil then
             if ascending and previous.value < data.value then
                 return false, previous
             elseif not ascending and previous.value > data.value then
@@ -1004,6 +1011,9 @@ end
 -- undesirable objects from the final list.
 --]]
 function findInRadiusBy(pos, radius, func, debug)
+    assert(pos ~= nil, "undefined")
+    assert(type(pos) == "userdata" or type(pos) == "table",
+        "invalid type")
     local radius = (radius or 1)
     local objList = Physics.cast({
         origin=pos, direction={0,1,0}, type=2, size={radius,radius,radius},
@@ -1030,8 +1040,9 @@ end
 -- of 0-90. It is ideal to use >0 though.
 --]]
 function isFaceUp(object, tolerance)
-    if not object then return -1 end
-    if not tolerance then tolerance = 20 end
+    assert(object ~= nil, "undefined")
+    assert(type(object) == "userdata", "invalid type")
+    if type(tolerance) ~= "number" then tolerance = 20 end
     local rotation = object.getRotation()[3]
     if rotation < tolerance or rotation > (360 - tolerance) then
         return true
@@ -1045,6 +1056,8 @@ end
 -- be laying relatively flat and individually accessible for them to be counted.
 --]]
 function faceUpCards(cardTable)
+    assert(cardTable ~= nil, "undefined")
+    assert(type(cardTable) == "table", "invalid type")
     local count = 0
     for i, card in ipairs(cardTable) do
         local object = getObjectFromGUID(card.guid)
@@ -1061,6 +1074,10 @@ end
 -- face down.
 --]]
 function ensureFaceUpCount(cardTable, count)
+    assert(cardTable ~= nil, "undefined")
+    assert(count ~= nil, "undefined")
+    assert(type(cardTable) == "table", "invalid type")
+    assert(type(count) == "number", "invalid type")
     for i, card in ipairs(cardTable) do
         local object = getObjectFromGUID(card.guid)
         if not object then return -1 end
@@ -1099,9 +1116,10 @@ end
 -- Log a warning to the in game log. This function will make sure that the text
 -- is printed in blue.
 --]]
-function logWarn(var)
-    logStyle("warn", "Blue")
-    log("Warn: "..var, nil, "warn")
+function logDebug(var)
+    if not debug then return end
+    logStyle("debug", "Blue")
+    log("Debug: "..var, nil, "debug")
 end
 
 --[[
