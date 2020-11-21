@@ -315,10 +315,10 @@ function initNumbersButtons()
     playCoin.createButton({
         click_function = "toggleRoundPlayHandler",
         function_owner = self,
-        label          = "Play",
+        label          = "Start Discard Checking",
         position       = vector(0, 2, 0),
         rotation       = vector(0, 270, 0),
-        width          = 2500,
+        width          = 5400,
         height         = 1000,
         font_size      = 500,
         tooltip        = "Toggle whether the game is currently in play. This controls whether the discard pile will be checked.",
@@ -821,9 +821,9 @@ function toggleRoundPlay(shouldPlay)
     playingRound = shouldPlay
     logDebug("playingRound = "..tostring(playingRound))
     if playCoin ~= nil then
-        local buttonText = "Play"
+        local buttonText = "Start Discard Checking"
         if playingRound then
-            buttonText = "Pause"
+            buttonText = "Stop Discard Checking"
         end
         playCoin.editButton({
             index = 0,
