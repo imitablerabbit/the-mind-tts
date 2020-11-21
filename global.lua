@@ -32,6 +32,14 @@ shurikenVotes = nil -- only populated during a vote
 
 debug = false --  Can be set by running 'lua debug=true' on the in game console
 
+-- Button object references
+previousCoin = nil
+nextCoin = nil
+resetCoin = nil
+dealCoin = nil
+playCoin = nil
+shurikenCoin = nil
+
 -- ============================================================================
 -- Global Callback Functions
 -- ============================================================================
@@ -247,8 +255,8 @@ end
 -- ============================================================================
 
 function initLevelButtons()
-    local previousCoin = getObjectFromGUID("e9d1a5")
-    local nextCoin = getObjectFromGUID("dae278")
+    previousCoin = getObjectFromGUID("e9d1a5")
+    nextCoin = getObjectFromGUID("dae278")
     previousCoin.clearButtons()
     previousCoin.createButton({
         click_function = "previousLevel",
@@ -259,7 +267,7 @@ function initLevelButtons()
         width          = 2500,
         height         = 1000,
         font_size      = 500,
-        tooltip        = "Go back to the previous level",
+        tooltip        = "Go back to the previous level.",
     })
     nextCoin.clearButtons()
     nextCoin.createButton({
@@ -271,13 +279,14 @@ function initLevelButtons()
         width          = 2500,
         height         = 1000,
         font_size      = 500,
-        tooltip        = "Advance to the next level",
+        tooltip        = "Advance to the next level.",
     })
 end
 
 function initNumbersButtons()
-    local resetCoin = getObjectFromGUID("c15ecd")
-    local dealCoin = getObjectFromGUID("b50b8c")
+    resetCoin = getObjectFromGUID("c15ecd")
+    dealCoin = getObjectFromGUID("b50b8c")
+    playCoin = getObjectFromGUID("0f5998")
     resetCoin.clearButtons()
     resetCoin.createButton({
         click_function = "resetNumberCards",
@@ -288,7 +297,7 @@ function initNumbersButtons()
         width          = 2500,
         height         = 1000,
         font_size      = 500,
-        tooltip        = "Reset the numbers deck ready for the next level",
+        tooltip        = "Reset the numbers deck ready for the next level.",
     })
     dealCoin.clearButtons()
     dealCoin.createButton({
@@ -300,7 +309,19 @@ function initNumbersButtons()
         width          = 2500,
         height         = 1000,
         font_size      = 500,
-        tooltip        = "Deal cards for the current level",
+        tooltip        = "Deal cards for the current level.",
+    })
+    playCoin.clearButtons()
+    playCoin.createButton({
+        click_function = "toggleRoundPlayHandler",
+        function_owner = self,
+        label          = "Play",
+        position       = vector(0, 2, 0),
+        rotation       = vector(0, 270, 0),
+        width          = 2500,
+        height         = 1000,
+        font_size      = 500,
+        tooltip        = "Toggle whether the game is currently in play. This controls whether the discard pile will be checked.",
     })
 end
 
@@ -311,7 +332,7 @@ end
 -- is not automatic though.
 --]]
 function initShurikenButtons()
-    local shurikenCoin = getObjectFromGUID("15bb08")
+    shurikenCoin = getObjectFromGUID("15bb08")
     shurikenCoin.clearButtons()
     shurikenCoin.createButton({
         click_function = "voteShurikenHandler",
@@ -322,7 +343,7 @@ function initShurikenButtons()
         width          = 5000,
         height         = 1000,
         font_size      = 500,
-        tooltip        = "Vote to use a shuriken",
+        tooltip        = "Vote to use a shuriken. All players must press this button within 5 seconds.",
     })
 end
 
@@ -550,6 +571,7 @@ end
 -- Advance to the next level and gain the rewards.
 --]]
 function nextLevel()
+    logDebug("moving to next level")
     local discardPosition = levelDiscardPosition:copy()
     moveLevel(levelCurrentZone, discardPosition, true, false)
 end
@@ -558,6 +580,7 @@ end
 -- Move back to the previousLevel and lose the rewards.
 --]]
 function previousLevel()
+    logDebug("going back a level")
     local discardPosition = levelCurrentPosition:copy()
     moveLevel(levelDiscardZone, discardPosition, false, true)
 end
@@ -611,11 +634,11 @@ function orderNumberDiscardReorderDeck()
                 -- it and check the order again. No point in trying to
                 -- find it again here.
                 numberDiscardDeck = nil
-                playingRound = true
+                toggleRoundPlay(true)
             end)
     elseif discardObject.tag == "Card" then
         discardObject.setPositionSmooth(numberDiscardPosition, false, false)
-        playingRound = true
+        toggleRoundPlay(true)
     end
 end
 
@@ -659,7 +682,7 @@ function dealNumberCards()
         return false
     end
     deck.deal(current.value)
-    playingRound = true
+    toggleRoundPlay(true)
     return true
 end
 
@@ -681,7 +704,7 @@ function verifyNumberDiscard()
     if not ordered then
         broadcastToAll("A card was played out of order!", "Red")
         removeLife()
-        playingRound = false
+        toggleRoundPlay(false)
         -- Move the discard pile off to the side slightly. This will then get
         -- ordered along side any loose cards in players hands.
         local deckPosition = numberDiscardPosition:copy()
@@ -774,8 +797,39 @@ function resetNumberCards()
         deck.shuffle()
     end, 60)
     numberDiscardDeck = nil
-    playingRound = false
+    toggleRoundPlay(false)
     return true
+end
+
+--[[
+-- Play/Pause button that stops the periodic checking of the number discard deck
+--]]
+function toggleRoundPlayHandler()
+    toggleRoundPlay()
+end
+
+--[[
+-- Toggle whether the round is being played. This controls whether the discard
+-- pile will be checked on the update functions.
+-- this will also change the text on the button to signify when the discard pile
+-- will be checked.
+--]]
+function toggleRoundPlay(shouldPlay)
+    if shouldPlay == nil then
+        shouldPlay = not playingRound
+    end
+    playingRound = shouldPlay
+    logDebug("playingRound = "..tostring(playingRound))
+    if playCoin ~= nil then
+        local buttonText = "Play"
+        if playingRound then
+            buttonText = "Pause"
+        end
+        playCoin.editButton({
+            index = 0,
+            label = buttonText
+        })
+    end
 end
 
 -- ============================================================================
@@ -832,7 +886,7 @@ end
 --]]
 function useShuriken()
     removeShuriken()
-    playingRound = false
+    toggleRoundPlay(false)
     -- Move the discard pile off to the side slightly. This will then get
     -- ordered along side any loose cards in players hands. This does not matter
     -- if it is a deck or a card.
