@@ -62,44 +62,7 @@ function onUpdate()
         return
     end
     numberCheckCount = 0
-    -- Check for a deck in the discard pile. If there was nothing there then we
-    -- can quit early. No need to check for sequential cards when there would
-    -- only be a singe card in the zone.
-    local discard = findNumberDiscard()
-    if discard == nil or not isDeck(discard) then
-        return
-    end
-    numberDiscardDeck = discard
-    local ordered, highestCard = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
-    if not ordered then
-        broadcastToAll("That's not a consecutive card!")
-        removeLife()
-        playingRound = false
-        -- Move the discard pile off to the side slightly. This will then get
-        -- ordered along side any loose cards in players hands.
-        local deckPosition = numberDiscardPosition:copy()
-        moveToDiscardReorderPosition(numberDiscardDeck)
-        -- Move any loose cards to the number discard pile if they have a lower
-        -- value than the highest card within the ordered deck.
-        local allObjects = getAllObjects()
-        if allObjects then
-            for i, object in ipairs(allObjects) do
-                if object.tag == "Card" then
-                    local data = numberCardsLookup[object.guid]
-                    if data and data.value < highestCard.value then
-                        Wait.frames(
-                            function()
-                                moveToDiscardReorderPosition(object)
-                            end, 40)
-                    end
-                end
-            end
-        end
-        Wait.frames(
-            function()
-                orderNumberDiscardReorderDeck()
-            end, 80)
-    end
+    verifyNumberDiscard()
 end
 
 -- ============================================================================
@@ -452,7 +415,11 @@ end
 function addLife()
     local lives = remainingLives() + 1
     ensureFaceUpCount(lifeCards, lives)
-    broadcastToAll("Gained 1 life!")
+    local lifeString = "lives"
+    if lives < 2 then
+        lifeString = "life"
+    end
+    broadcastToAll("Gained 1 life! You have "..lives.." "..lifeString.." remaining.")
 end
 
 --[[
@@ -461,7 +428,15 @@ end
 function removeLife()
     local lives = remainingLives() - 1
     ensureFaceUpCount(lifeCards, lives)
-    broadcastToAll("Lost 1 life!")
+    if lives <= 0 then
+        broadcastToAll("No more lives left, you lose!", "Red")
+        return
+    end
+    local lifeString = "lives"
+    if lives < 2 then
+        lifeString = "life"
+    end
+    broadcastToAll("Lost 1 life! You have "..lives.." "..lifeString.." remaining.")
 end
 
 --[[
@@ -477,7 +452,7 @@ end
 function addShuriken()
     local shuriken = remainingShuriken() + 1
     ensureFaceUpCount(shurikenCards, shuriken)
-    broadcastToAll("Gained 1 shuriken!")
+    broadcastToAll("Gained 1 shuriken! You have "..shuriken.." shuriken remaining.")
 end
 
 --[[
@@ -486,7 +461,7 @@ end
 function removeShuriken()
     local shuriken = remainingShuriken() - 1
     ensureFaceUpCount(shurikenCards, shuriken)
-    broadcastToAll("Lost 1 shuriken!")
+    broadcastToAll("Lost 1 shuriken! You have "..shuriken.." shuriken remaining.")
 end
 
 -- ============================================================================
@@ -693,6 +668,52 @@ function dealNumberCards()
 end
 
 --[[
+-- Go through all the number cards inside the number discard deck. If any of
+-- them are out of order then the players will lose a life. Any loose cards will
+-- then be placed into the discard pile and it will be reordered.
+--]]
+function verifyNumberDiscard()
+    -- Check for a deck in the discard pile. If there was nothing there then we
+    -- can quit early. No need to check for sequential cards when there would
+    -- only be a singe card in the zone.
+    local discard = findNumberDiscard()
+    if discard == nil or not isDeck(discard) then
+        return
+    end
+    numberDiscardDeck = discard
+    local ordered, highestCard = isDeckOrdered(numberCardsLookup, numberDiscardDeck, false)
+    if not ordered then
+        broadcastToAll("A card was played out of order!", "Red")
+        removeLife()
+        playingRound = false
+        -- Move the discard pile off to the side slightly. This will then get
+        -- ordered along side any loose cards in players hands.
+        local deckPosition = numberDiscardPosition:copy()
+        moveToDiscardReorderPosition(numberDiscardDeck)
+        -- Move any loose cards to the number discard pile if they have a lower
+        -- value than the highest card within the ordered deck.
+        local allObjects = getAllObjects()
+        if allObjects then
+            for i, object in ipairs(allObjects) do
+                if object.tag == "Card" then
+                    local data = numberCardsLookup[object.guid]
+                    if data and data.value < highestCard.value then
+                        Wait.frames(
+                            function()
+                                moveToDiscardReorderPosition(object)
+                            end, 40)
+                    end
+                end
+            end
+        end
+        Wait.frames(
+            function()
+                orderNumberDiscardReorderDeck()
+            end, 80)
+    end
+end
+
+--[[
 -- Search for object in the discard zone. If anything could be found then return
 -- that object.
 --]]
@@ -772,12 +793,20 @@ end
 -- shuriken.
 --]]
 function voteShurikenHandler(obj, playerColor, altClick)
+    if remainingShuriken() <= 0 then
+        broadcastToColor("No shurikens left! No vote has been started.", playerColor, "Red")
+        return
+    end
     if not shurikenVotes then
         shurikenVotes = {}
         Wait.time(checkShurikenVotes, 5, 0)
         broadcastToAll(playerColor.." has started a vote to use a shuriken.")
     else
-        broadcastToAll(playerColor.." has voted to use a shuriken.")
+        if shurikenVotes[playerColor] ~= nil then
+            broadcastToColor("Already voted to use a shuriken.", playerColor, "Red")
+        else
+            broadcastToAll(playerColor.." has voted to use a shuriken.")
+        end
     end
     castVote(playerColor, shurikenVotes)
 end
@@ -792,10 +821,10 @@ function checkShurikenVotes()
        return -1
     end
     if allColorsVoted(shurikenVotes) then
-        broadcastToAll("All players voted to use a shuriken")
+        broadcastToAll("All players voted to use a shuriken", "Green")
         useShuriken()
     else
-        broadcastToAll("Not all players voted to use a shuriken within the time limit. Cancelling vote.")
+        broadcastToAll("Not all players voted to use a shuriken within the time limit. Cancelling vote.", "Red")
     end
     shurikenVotes = nil
 end
