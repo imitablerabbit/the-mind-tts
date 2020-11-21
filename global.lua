@@ -105,7 +105,7 @@ function onUpdate()
                         numberDiscardDeck = nil
                         playingRound = true
                     end)
-            end, 30)
+            end, 40)
     end
 end
 
@@ -808,7 +808,6 @@ function useShuriken()
                 -- Shhh, just pretend this is the only object.
                 local discardObject = discardObjects[1]
                 if discardObject ~= nil and type(discardObject) ~= "number" then
-                    log(discardObject)
                     if discardObject.tag == "Deck" then
                         numberDiscardDeck = discardObject
                         orderDeck(numberCards, numberDiscardDeck, dropPosition,
