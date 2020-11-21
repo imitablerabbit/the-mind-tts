@@ -474,10 +474,12 @@ end
 -- list.
 --]]
 function currentLevel(levelZone)
+    assert(levelZone ~= nil, "undefined")
+    assert(type(levelZone) == "userdata", "invalid type")
     local levelsObject = getZoneObject(levelZone)
-    if type(levelsObject) == "number" then
-        logError("unable to get current level (-1)")
-        return -1
+    if levelsObject == nil then
+        logDebug("unable to get current level")
+        return nil
     end
     local card = nil
     if levelsObject.tag == "Card" then
@@ -488,8 +490,8 @@ function currentLevel(levelZone)
         card = cards[deckSize]
     end
     if not card then
-        logError("unable to get current level (-2)")
-        return -2
+        logDebug("unable to get current level")
+        return nil
     end
     local levelCard = levelCardsLookup[card.guid]
     return levelCard
@@ -501,22 +503,20 @@ end
 -- level allows it. This flag is used to control whether or not the level
 -- advancement behaves as though the players completed the level or just decided
 -- to start elsewhere. The remove bonus does the same but in reverse, e.g. it will
--- remove lives. These parameters should be mutually exclusive.
+-- remove lives. These parameters should be mutually exclusive. The function
+-- returns true if it was able to move the level.
 --]]
 function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
-    local returnCode = 0
+    assert(levelZone ~= nil, "undefined")
+    assert(discardPosition ~= nil, "undefined")
     if gainBonus or removeBonus then
         local current = currentLevel(levelZone)
         local currentData = nil
-        if type(current) == "table" then
-            currentData = levelCardsLookup[current.guid]
-        elseif current == 0 then
-            return returnCode
-        elseif current < 0 then
-            returnCode = -1
-            logError("unable to move level ("..returnCode..")")
-            return returnCode
+        if current == nil then
+            logDebug("unable to move level - unknown current levels")
+            return false
         end
+        currentData = levelCardsLookup[current.guid]
         if gainBonus and currentData.gainLife then
             addLife()
         end
@@ -532,10 +532,9 @@ function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
     end
     -- Physically move the card from its zone to the discard position.
     local levelsObject = getZoneObject(levelZone)
-    if type(levelsObject) == "number" then
-        returnCode = -2
-        logError("unable to move level ("..returnCode..")")
-        return returnCode
+    if levelsObject == nil then
+        logDebug("unable to move level - no level object")
+        return false
     end
     if levelsObject.tag == "Card" then
         levelsObject.setPositionSmooth(discardPosition, false, false)
@@ -544,6 +543,7 @@ function moveLevel(levelZone, discardPosition, gainBonus, removeBonus)
             position = discardPosition
         })
     end
+    return true
 end
 
 --[[
@@ -645,26 +645,22 @@ end
 --[[
 -- Deal cards equal to the current level count to all of the seated players at the
 -- table. This function assumes that the numbers deck has been recreated and
--- shuffled.
+-- shuffled. Returns true if we were able to deal out some cards.
 --]]
 function dealNumberCards()
     local deck = getZoneObject(numberDeckZone)
-    if type(deck) == "number" then
-        logError("unable to deal cards (-1)")
-        return -1
-    end
-    if deck.tag ~= "Deck" then
-        logError("unable to deal cards (-2)")
-        return -2
+    if deck == nil or deck.tag ~= "Deck" then
+        logDebug("unable to deal cards - no deck found")
+        return false
     end
     local current = currentLevel(levelCurrentZone)
-    if type(current) == "number" then
-        logError("unable to deal cards (-3)")
-        return -3
+    if current == nil then
+        logDebug("unable to deal cards - unknown current level")
+        return false
     end
     deck.deal(current.value)
     playingRound = true
-    return 0
+    return true
 end
 
 --[[
@@ -748,8 +744,8 @@ end
 function resetNumberCards()
     local discardObjs = numberDiscardZone.getObjects()
     if not discardObjs then
-        logError("unable to reset number cards (-1)")
-        return -1
+        logDebug("unable to reset number cards - no discards")
+        return true
     end
     -- Loop over discard pile. This could contain decks of cards.
     for i, card in ipairs(discardObjs) do
@@ -771,15 +767,15 @@ function resetNumberCards()
     end
     Wait.frames(function()
         local deck = getZoneObject(numberDeckZone)
-        if type(deck) == "number" then
-            logError("unable to reset number cards (-2)")
-            return -2
+        if deck == nil then
+            logDebug("unable to reset number cards - no number deck to shuffle")
+            return false
         end
         deck.shuffle()
     end, 60)
     numberDiscardDeck = nil
     playingRound = false
-    return 0
+    return true
 end
 
 -- ============================================================================
@@ -926,7 +922,7 @@ function getZoneObject(zone)
     end
     if objCount < 1 then
         logDebug("no objects in zone")
-        return -2
+        return nil
     end
     return objs[1]
 end
@@ -1149,13 +1145,4 @@ function logDebug(var)
     if not debug then return end
     logStyle("debug", "Blue")
     log("Debug: "..var, nil, "debug")
-end
-
---[[
--- Log an error to the in game log. This function will make sure that the text
--- is printed in red.
---]]
-function logError(var)
-    logStyle("error", "Red")
-    log("Error: "..var, nil, "error")
 end
