@@ -44,7 +44,6 @@ function onLoad()
     initNumbersButtons()
     initShurikenButtons()
     drawLines()
-    startLuaCoroutine(Global, "checkNumberDeck")
 end
 
 --[[
@@ -600,16 +599,6 @@ end
 -- ============================================================================
 
 --[[
--- Sort the number discard deck back into numerical order. This is called when
--- the players have made a mistake and the order is no longer sequential. Note
--- this function can take in the callback which is then passed into the generic
--- sorting function.
---]]
-function orderNumberDiscardDeck(callback)
-
-end
-
---[[
 -- Take the cards out of the numberDeck and recreate them in numeric order on the
 -- discard pile.
 --]]
@@ -751,11 +740,103 @@ function checkShurikenVotes()
     end
     if allColorsVoted(shurikenVotes) then
         broadcastToAll("All players voted to use a shuriken")
-        removeShuriken()
+        useShuriken()
     else
         broadcastToAll("Not all players voted to use a shuriken within the time limit. Cancelling vote.")
     end
     shurikenVotes = nil
+end
+
+--[[
+-- Fetch the lowest card from the player hands and add it to the discard pile.
+-- reorganise the deck when done.
+-- TODO: This function is messy and shares common code with the number detection
+--]]
+function useShuriken()
+    removeShuriken()
+    playingRound = false
+    -- Move the discard pile off to the side slightly. This will then get
+    -- ordered along side any loose cards in players hands.
+    local newDeckPosition = numberDiscardPosition:copy()
+    newDeckPosition.x = newDeckPosition.x - 3
+    local discardObject = getZoneObject(numberDiscardZone)
+    if type(discardObject) ~= "number" and discardObject ~= nil then
+        discardObject.setPosition(newDeckPosition)
+    end
+    -- Move the lowest cards from the players hand to the same position as the
+    -- discard pile.
+    Wait.frames(
+        function()
+            local players = seatedPlayers()
+            if players ~= nil then
+                for i, player in ipairs(players) do
+                    local objects = player:getHandObjects()
+                    local lowest = nil
+                    local lowestObject = nil
+                    if objects ~= nil then
+                        for j, object in ipairs(objects) do
+                            if object.tag == "Card" then
+                                local card = numberCardsLookup[object.guid]
+                                if card and lowest == nil or card.value < lowest.value then
+                                    lowest = card
+                                    lowestObject = object
+                                end
+                            end
+                        end
+                        if lowestObject ~= nil then
+                            lowestObject.setPosition(newDeckPosition)
+                        end
+                    end
+                end
+            end
+        end, 10)
+    -- Reorder the discard pile so that everything is back into numeric order.
+    local dropPosition = numberDiscardPosition:copy()
+    dropPosition.y = 2
+    Wait.frames(
+        function()
+            -- Maybe all the loose cards have just formed a new discard deck.
+            -- Check for it using the typical zone object functions.
+            if numberDiscardDeck == nil then
+                local discardObjects = findInRadiusBy(newDeckPosition, 4,
+                    function(obj)
+                        if obj.tag == "Deck" or obj.tag == "Card" then
+                            return true
+                        end
+                        return false
+                    end)
+                -- Shhh, just pretend this is the only object.
+                local discardObject = discardObjects[1]
+                if discardObject ~= nil and type(discardObject) ~= "number" then
+                    log(discardObject)
+                    if discardObject.tag == "Deck" then
+                        numberDiscardDeck = discardObject
+                        orderDeck(numberCards, numberDiscardDeck, dropPosition,
+                            function()
+                                -- Reset the discard deck so that the next tick can find
+                                -- it and check the order again. No point in trying to
+                                -- find it again here.
+                                numberDiscardDeck = nil
+                                playingRound = true
+                            end)
+                    elseif discardObject.tag == "Card" then
+                        discardObject.setPositionSmooth(dropPosition, false, false)
+                        playingRound = true
+                    else
+                        playingRound = true
+                    end
+                end
+            else
+                orderDeck(numberCards, numberDiscardDeck, dropPosition,
+                    function()
+                        -- Reset the discard deck so that the next tick can find
+                        -- it and check the order again. No point in trying to
+                        -- find it again here.
+                        numberDiscardDeck = nil
+                        playingRound = true
+                    end)
+            end
+        end, 40)
 end
 
 --[[
@@ -974,7 +1055,7 @@ end
 function seatedPlayers()
     local players = Player.getPlayers()
     local seatedPlayers = {}
-    local x = 0
+    local x = 1
     for i, player in ipairs(players) do
         if player.seated then
             seatedPlayers[x] = player
